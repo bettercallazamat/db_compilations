@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+{% block title %}Edit Video - {{ video.title }}{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col-md-8 offset-md-2">
+    <div class="card-custom">
+      <div class="card-header">
+        <h4><i class="bi bi-pencil"></i> Edit Video Details</h4>
+      </div>
+      <div class="card-body">
+        <form method="POST">
+          <!-- Basic Information -->
+          <div class="mb-3">
+            <label for="title" class="form-label">Title</label>
+            <input type="text" class="form-control" id="title" name="title" value="{{ video.title }}" required>
+          </div>
+
+          <div class="mb-3">
+            <label for="video_id" class="form-label">Video ID</label>
+            <input type="text" class="form-control" id="video_id" name="video_id" value="{{ video.video_id }}" readonly>
+          </div>
+
+          <div class="mb-3">
+            <label for="description" class="form-label">Description</label>
+            <textarea class="form-control" id="description" name="description"
+              rows="6">{{ video.description }}</textarea>
+          </div>
+
+          <!-- Video Properties -->
+          <div class="row">
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label for="duration" class="form-label">Duration</label>
+                <input type="text" class="form-control" id="duration" name="duration" value="{{ video.duration }}"
+                  readonly>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label for="published_at" class="form-label">Published At</label>
+                <input type="text" class="form-control" id="published_at" name="published_at"
+                  value="{{ video.published_at }}" readonly>
+              </div>
+            </div>
+          </div>
+
+          <!-- Performance Metrics (Read-only) -->
+          <div class="row">
+            <div class="col-md-4">
+              <div class="mb-3">
+                <label for="view_count" class="form-label">View Count</label>
+                <input type="text" class="form-control" id="view_count" name="view_count" value="{{ "
+                  {:,}".format(video.view_count) }}" readonly>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="mb-3">
+                <label for="like_count" class="form-label">Like Count</label>
+                <input type="text" class="form-control" id="like_count" name="like_count" value="{{ "
+                  {:,}".format(video.like_count) }}" readonly>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="mb-3">
+                <label for="comment_count" class="form-label">Comment Count</label>
+                <input type="text" class="form-control" id="comment_count" name="comment_count" value="{{ "
+                  {:,}".format(video.comment_count) }}" readonly>
+              </div>
+            </div>
+          </div>
+
+          <!-- Video Flags -->
+          <div class="mb-3">
+            <h5>Video Properties</h5>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="is_compilation" name="is_compilation" {% if
+                video.is_compilation %}checked{% endif %}>
+              <label class="form-check-label" for="is_compilation">
+                This is a compilation video
+              </label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="actor" name="actor" {% if video.actor %}checked{%
+                endif %}>
+              <label class="form-check-label" for="actor">
+                This video features an actor
+              </label>
+            </div>
+          </div>
+
+          <!-- Tags -->
+          <div class="mb-3">
+            <label for="tags" class="form-label">Tags</label>
+            <input type="text" class="form-control" id="tags" name="tags"
+              value="{% if video.tags %}{{ video.tags|join(', ') }}{% endif %}"
+              placeholder="Enter tags separated by commas">
+            <div class="form-text">Separate multiple tags with commas</div>
+          </div>
+
+          <!-- Analytics Information (Read-only) -->
+          <div class="card bg-light mb-3">
+            <div class="card-header">
+              <h6 class="mb-0"><i class="bi bi-graph-up"></i> Performance Analytics</h6>
+            </div>
+            <div class="card-body">
+              <div class="row">
+                <div class="col-md-4">
+                  <div class="mb-2">
+                    <label class="form-label">Average View Percentage</label>
+                    <div class="d-flex align-items-center">
+                      <div class="progress flex-grow-1 me-2">
+                        <div
+                          class="progress-bar {% if video.average_view_percentage >= 70 %}bg-success{% elif video.average_view_percentage >= 50 %}bg-warning{% else %}bg-danger{% endif %}"
+                          style="width: {{ video.average_view_percentage }}%"></div>
+                      </div>
+                      <span class="text-muted">{{ video.average_view_percentage }}%</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="mb-2">
+                    <label class="form-label">30s Retention</label>
+                    <div class="d-flex align-items-center">
+                      <div class="progress flex-grow-1 me-2">
+                        <div class="progress-bar bg-success" style="width: {{ video.retention_30s }}%"></div>
+                      </div>
+                      <span class="text-muted">{{ video.retention_30s }}%</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="mb-2">
+                    <label class="form-label">Est. Minutes Watched</label>
+                    <p class="mb-0 text-muted">{{ "{:,}".format(video.estimated_minutes_watched) }}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Usage Statistics -->
+          {% if video.user_compilation_usage and video.user_compilation_usage.total_inclusions > 0 %}
+          <div class="card bg-info bg-opacity-10 mb-3">
+            <div class="card-header">
+              <h6 class="mb-0"><i class="bi bi-recycle"></i> Compilation Usage</h6>
+            </div>
+            <div class="card-body">
+              <div class="row">
+                <div class="col-md-4">
+                  <p><strong>Total Uses:</strong> {{ video.user_compilation_usage.total_inclusions }}</p>
+                </div>
+                <div class="col-md-4">
+                  <p><strong>First Video Uses:</strong> {{ video.user_compilation_usage.first_video_count }}</p>
+                </div>
+                <div class="col-md-4">
+                  {% if video.user_compilation_usage.last_used %}
+                  <p><strong>Last Used:</strong> {{ video.user_compilation_usage.last_used.strftime('%Y-%m-%d') }}</p>
+                  {% endif %}
+                </div>
+              </div>
+              <div class="mt-2">
+                <a href="/video_usage_detail/{{ video.video_id }}" class="btn btn-outline-info btn-sm">
+                  <i class="bi bi-info-circle"></i> View Usage Details
+                </a>
+              </div>
+            </div>
+          </div>
+          {% endif %}
+
+          <!-- Action Buttons -->
+          <div class="d-flex justify-content-between">
+            <div>
+              <a href="/video/{{ video.video_id }}" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> Back to Video
+              </a>
+              <a href="/" class="btn btn-outline-primary">
+                <i class="bi bi-list"></i> All Videos
+              </a>
+            </div>
+            <div>
+              <button type="button" class="btn btn-outline-warning" onclick="resetForm()">
+                <i class="bi bi-arrow-clockwise"></i> Reset Changes
+              </button>
+              <button type="submit" class="btn btn-success">
+                <i class="bi bi-check-circle"></i> Save Changes
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  function resetForm() {
+    if (confirm('Are you sure you want to reset all changes? This will discard any unsaved modifications.')) {
+      location.reload();
+    }
+  }
+
+  // Auto-save indication
+  let saveTimeout;
+  const form = document.querySelector('form');
+  const inputs = form.querySelectorAll('input[type="text"], textarea, input[type="checkbox"]');
+
+  inputs.forEach(input => {
+    if (!input.readOnly) {
+      input.addEventListener('input', () => {
+        clearTimeout(saveTimeout);
+        // Visual indication that changes are pending
+        const saveBtn = document.querySelector('button[type="submit"]');
+        saveBtn.classList.add('btn-warning');
+        saveBtn.classList.remove('btn-success');
+        saveBtn.innerHTML = '<i class="bi bi-exclamation-circle"></i> Changes Pending';
+
+        // Reset after a delay
+        saveTimeout = setTimeout(() => {
+          saveBtn.classList.remove('btn-warning');
+          saveBtn.classList.add('btn-success');
+          saveBtn.innerHTML = '<i class="bi bi-check-circle"></i> Save Changes';
+        }, 3000);
+      });
+    }
+  });
+
+  // Form validation
+  form.addEventListener('submit', function (e) {
+    const title = document.getElementById('title').value.trim();
+    if (!title) {
+      e.preventDefault();
+      showAlert('Video title is required', 'danger');
+      document.getElementById('title').focus();
+      return false;
+    }
+
+    showLoading(true);
+    showAlert('Saving video changes...', 'info');
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,262 @@
+{% extends "base.html" %}
+{% block title %}Compilations - Video Analytics{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h2><i class="bi bi-collection-play text-primary"></i> Compilations</h2>
+  <div>
+    <button class="btn btn-outline-secondary" onclick="processCompilations()">
+      <i class="bi bi-gear"></i> Process New
+    </button>
+    <a href="/create-compilation" class="btn btn-primary">
+      <i class="bi bi-plus-circle"></i> Create Compilation
+    </a>
+  </div>
+</div>
+
+<!-- Compilation Statistics -->
+<div class="row mb-4">
+  <div class="col-md-3">
+    <div class="stats-card bg-primary">
+      <span class="stats-number">{{ total_compilations if total_compilations else 0 }}</span>
+      <span>Total Compilations</span>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="stats-card bg-success">
+      <span class="stats-number">{{ auto_detected if auto_detected else 0 }}</span>
+      <span>Auto-Detected</span>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="stats-card bg-info">
+      <span class="stats-number">{{ user_created if user_created else 0 }}</span>
+      <span>User-Created</span>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="stats-card bg-warning">
+      <span class="stats-number">{{ avg_duration if avg_duration else 0 }}</span>
+      <span>Avg Duration (min)</span>
+    </div>
+  </div>
+</div>
+
+<!-- Filter Options -->
+<div class="card-custom mb-4">
+  <div class="card-body">
+    <form method="GET" class="row g-3">
+      <div class="col-md-4">
+        <label for="search" class="form-label">Search Compilations</label>
+        <input type="text" class="form-control" id="search" name="search"
+          value="{{ search_query if search_query else '' }}" placeholder="Search by title or description...">
+      </div>
+      <div class="col-md-3">
+        <label for="duration_filter" class="form-label">Duration Range</label>
+        <select class="form-select" id="duration_filter" name="duration">
+          <option value="">All Durations</option>
+          <option value="short" {% if duration_filter=='short' %}selected{% endif %}>Short (5-10 min)</option>
+          <option value="medium" {% if duration_filter=='medium' %}selected{% endif %}>Medium (10-20 min)</option>
+          <option value="long" {% if duration_filter=='long' %}selected{% endif %}>Long (20+ min)</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label for="type_filter" class="form-label">Type</label>
+        <select class="form-select" id="type_filter" name="type">
+          <option value="">All Types</option>
+          <option value="auto" {% if type_filter=='auto' %}selected{% endif %}>Auto-Detected</option>
+          <option value="user" {% if type_filter=='user' %}selected{% endif %}>User-Created</option>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">&nbsp;</label>
+        <div class="d-grid">
+          <button type="submit" class="btn btn-primary">
+            <i class="bi bi-funnel"></i> Filter
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Compilations Grid -->
+<div class="row">
+  {% for compilation in compilations %}
+  <div class="col-lg-6 col-md-12 mb-4">
+    <div class="card-custom h-100">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start mb-3">
+          <h5 class="card-title">
+            <a href="/compilation_detail/{{ compilation._id if compilation._id else compilation.video_id }}"
+              class="text-decoration-none">
+              {{ compilation.title[:60] }}{% if compilation.title|length > 60 %}...{% endif %}
+            </a>
+          </h5>
+          <div>
+            {% if compilation.user_created %}
+            <span class="badge bg-info"><i class="bi bi-person-plus"></i> User</span>
+            {% else %}
+            <span class="badge bg-success"><i class="bi bi-robot"></i> Auto</span>
+            {% endif %}
+          </div>
+        </div>
+
+        <!-- Compilation Metadata -->
+        <div class="row mb-3">
+          <div class="col-6">
+            <small class="text-muted">
+              <i class="bi bi-clock"></i>
+              {{ compilation.duration_rounded if compilation.duration_rounded else (compilation.duration_seconds //
+              60) if compilation.duration_seconds else 'N/A' }} min
+            </small>
+          </div>
+          <div class="col-6">
+            <small class="text-muted">
+              <i class="bi bi-collection"></i>
+              {{ compilation.video_count if compilation.video_count else (compilation.timestamps|length if
+              compilation.timestamps else 'N/A') }} videos
+            </small>
+          </div>
+          <div class="col-6">
+            <small class="text-muted">
+              <i class="bi bi-eye"></i>
+              {{ "{:,}".format(compilation.view_count) if compilation.view_count else 'N/A' }}
+            </small>
+          </div>
+          <div class="col-6">
+            <small class="text-muted">
+              <i class="bi bi-graph-up"></i>
+              {{ compilation.average_view_percentage if compilation.average_view_percentage else 'N/A' }}% retention
+            </small>
+          </div>
+        </div>
+
+        <!-- Timestamps Preview -->
+        {% if compilation.timestamps %}
+        <div class="mb-3">
+          <h6 class="text-muted">Video Timestamps:</h6>
+          <div class="bg-light rounded p-2" style="max-height: 120px; overflow-y: auto;">
+            {% for timestamp in compilation.timestamps[:5] %}
+            <div class="small mb-1">
+              <code>{{ timestamp.timestamp if timestamp.timestamp else timestamp.time }}</code> -
+              {{ timestamp.title if timestamp.title else timestamp.description }}
+            </div>
+            {% endfor %}
+            {% if compilation.timestamps|length > 5 %}
+            <div class="small text-muted">
+              ... and {{ compilation.timestamps|length - 5 }} more videos
+            </div>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
+
+        <!-- Performance Indicator -->
+        {% if compilation.average_view_percentage %}
+        <div class="mb-3">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <small class="text-muted">Performance</small>
+            <small class="text-muted">{{ compilation.average_view_percentage }}%</small>
+          </div>
+          <div class="progress progress-custom">
+            <div class="progress-bar 
+                        {% if compilation.average_view_percentage >= 70 %}bg-success
+                        {% elif compilation.average_view_percentage >= 50 %}bg-warning
+                        {% else %}bg-danger{% endif %}" style="width: {{ compilation.average_view_percentage }}%">
+            </div>
+          </div>
+        </div>
+        {% endif %}
+
+        <!-- Action Buttons -->
+        <div class="d-grid gap-2 d-md-flex">
+          <a href="/compilation_detail/{{ compilation._id if compilation._id else compilation.video_id }}"
+            class="btn btn-outline-primary btn-sm flex-fill">
+            <i class="bi bi-eye"></i> View Details
+          </a>
+          {% if compilation.user_created %}
+          <a href="/compilation-preview/{{ compilation._id }}" class="btn btn-outline-success btn-sm">
+            <i class="bi bi-play"></i> Preview
+          </a>
+          {% endif %}
+          <button class="btn btn-outline-secondary btn-sm"
+            onclick="copyCompilationId('{{ compilation._id if compilation._id else compilation.video_id }}')">
+            <i class="bi bi-clipboard"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Pagination -->
+{% if total_pages > 1 %}
+<nav class="mt-4">
+  <ul class="pagination justify-content-center">
+    {% if has_prev %}
+    <li class="page-item">
+      <a class="page-link"
+        href="?page={{ page - 1 }}{% if search_query %}&search={{ search_query }}{% endif %}{% if duration_filter %}&duration={{ duration_filter }}{% endif %}{% if type_filter %}&type={{ type_filter }}{% endif %}">
+        <i class="bi bi-chevron-left"></i>
+      </a>
+    </li>
+    {% endif %}
+
+    {% for page_num in range(max(1, page - 2), min(total_pages + 1, page + 3)) %}
+    {% if page_num == page %}
+    <li class="page-item active">
+      <span class="page-link">{{ page_num }}</span>
+    </li>
+    {% else %}
+    <li class="page-item">
+      <a class="page-link"
+        href="?page={{ page_num }}{% if search_query %}&search={{ search_query }}{% endif %}{% if duration_filter %}&duration={{ duration_filter }}{% endif %}{% if type_filter %}&type={{ type_filter }}{% endif %}">
+        {{ page_num }}
+      </a>
+    </li>
+    {% endif %}
+    {% endfor %}
+
+    {% if has_next %}
+    <li class="page-item">
+      <a class="page-link"
+        href="?page={{ page + 1 }}{% if search_query %}&search={{ search_query }}{% endif %}{% if duration_filter %}&duration={{ duration_filter }}{% endif %}{% if type_filter %}&type={{ type_filter }}{% endif %}">
+        <i class="bi bi-chevron-right"></i>
+      </a>
+    </li>
+    {% endif %}
+  </ul>
+</nav>
+{% endif %}
+
+<!-- No Results Message -->
+{% if not compilations %}
+<div class="text-center py-5">
+  <i class="bi bi-collection-play text-muted" style="font-size: 4rem;"></i>
+  <h4 class="text-muted mt-3">No Compilations Found</h4>
+  <p class="text-muted">Try processing your videos to detect compilations or create a new one.</p>
+  <div class="mt-3">
+    <button class="btn btn-primary me-2" onclick="processCompilations()">
+      <i class="bi bi-gear"></i> Process Compilations
+    </button>
+    <a href="/create-compilation" class="btn btn-outline-primary">
+      <i class="bi bi-plus-circle"></i> Create New
+    </a>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  function copyCompilationId(id) {
+    navigator.clipboard.writeText(id).then(function () {
+      showAlert('Compilation ID copied to clipboard', 'success');
+    }).catch(function () {
+      showAlert('Failed to copy ID', 'danger');
+    });
+  }
+</script>
+{% endblock %}

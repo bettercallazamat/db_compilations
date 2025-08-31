@@ -1,0 +1,305 @@
+{% extends "base.html" %}
+{% block title %}Video Usage Statistics - Video Analytics{% endblock %}
+
+{% block extra_css %}
+<style>
+  .usage-metric {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 10px;
+    padding: 1rem;
+    text-align: center;
+    margin-bottom: 1rem;
+  }
+
+  .usage-chart {
+    height: 300px;
+    margin-bottom: 2rem;
+  }
+
+  .video-usage-card {
+    border-left: 4px solid #3498db;
+    transition: all 0.2s ease;
+  }
+
+  .video-usage-card:hover {
+    border-left-color: #e74c3c;
+    transform: translateX(2px);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h2><i class="bi bi-diagram-3 text-primary"></i> Video Usage Analytics</h2>
+  <div>
+    <button class="btn btn-outline-primary" onclick="updateStats()">
+      <i class="bi bi-arrow-clockwise"></i> Update Stats
+    </button>
+    <button class="btn btn-primary" onclick="exportUsageStats()">
+      <i class="bi bi-download"></i> Export Report
+    </button>
+  </div>
+</div>
+
+<!-- Usage Overview Metrics -->
+<div class="row mb-4">
+  <div class="col-md-3">
+    <div class="usage-metric">
+      <h3>{{ usage_stats.total_videos_used if usage_stats else 0 }}</h3>
+      <small>Videos Used in Compilations</small>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="usage-metric">
+      <h3>{{ usage_stats.total_usage_count if usage_stats else 0 }}</h3>
+      <small>Total Usage Instances</small>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="usage-metric">
+      <h3>{{ usage_stats.avg_usage_per_video if usage_stats else 0 }}</h3>
+      <small>Avg Uses Per Video</small>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="usage-metric">
+      <h3>{{ usage_stats.most_used_count if usage_stats else 0 }}</h3>
+      <small>Max Usage (Single Video)</small>
+    </div>
+  </div>
+</div>
+
+<!-- Usage Charts -->
+<div class="row mb-4">
+  <div class="col-md-6">
+    <div class="card-custom">
+      <div class="card-header">
+        <h5><i class="bi bi-bar-chart"></i> Usage Distribution</h5>
+      </div>
+      <div class="card-body">
+        <div class="usage-chart">
+          <canvas id="usageDistributionChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card-custom">
+      <div class="card-header">
+        <h5><i class="bi bi-pie-chart"></i> First Video Preferences</h5>
+      </div>
+      <div class="card-body">
+        <div class="usage-chart">
+          <canvas id="firstVideoChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Most Used Videos -->
+<div class="card-custom mb-4">
+  <div class="card-header">
+    <h5><i class="bi bi-trophy"></i> Most Used Videos</h5>
+  </div>
+  <div class="card-body">
+    <div class="row">
+      {% if most_used_videos %}
+      {% for video in most_used_videos %}
+      <div class="col-md-6 mb-3">
+        <div class="card video-usage-card h-100">
+          <div class="card-body">
+            <h6 class="card-title">
+              <a href="/video/{{ video.video_id }}" class="text-decoration-none">
+                {{ video.title[:50] }}{% if video.title|length > 50 %}...{% endif %}
+              </a>
+            </h6>
+
+            <div class="row text-sm mb-2">
+              <div class="col-6">
+                <span class="badge bg-primary">
+                  {{ video.user_compilation_usage.total_inclusions }} uses
+                </span>
+              </div>
+              <div class="col-6">
+                <span class="badge bg-success">
+                  {{ video.user_compilation_usage.first_video_count }} first
+                </span>
+              </div>
+            </div>
+
+            <div class="progress progress-custom mb-2">
+              <div class="progress-bar"
+                style="width: {{ (video.user_compilation_usage.total_inclusions / usage_stats.most_used_count * 100) if usage_stats and usage_stats.most_used_count > 0 else 0 }}%">
+              </div>
+            </div>
+
+            <div class="row text-muted small">
+              <div class="col-6">
+                <i class="bi bi-eye"></i> {{ "{:,}".format(video.view_count) }}
+              </div>
+              <div class="col-6">
+                <i class="bi bi-graph-up"></i> {{ video.average_view_percentage }}%
+              </div>
+              {% if video.user_compilation_usage.last_used %}
+              <div class="col-12">
+                <i class="bi bi-clock"></i> Last used: {{
+                video.user_compilation_usage.last_used.strftime('%Y-%m-%d') }}
+              </div>
+              {% endif %}
+            </div>
+
+            <div class="mt-2">
+              <a href="/video_usage_detail/{{ video.video_id }}" class="btn btn-outline-primary btn-sm">
+                <i class="bi bi-info-circle"></i> Usage Details
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+      {% else %}
+      <div class="col-12 text-center py-4">
+        <i class="bi bi-graph-down text-muted" style="font-size: 3rem;"></i>
+        <h5 class="text-muted mt-2">No Usage Data Available</h5>
+        <p class="text-muted">Start creating compilations to see usage statistics.</p>
+        <a href="/create-compilation" class="btn btn-primary">
+          <i class="bi bi-plus-circle"></i> Create First Compilation
+        </a>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Usage by Duration Analysis -->
+{% if duration_analysis %}
+<div class="card-custom">
+  <div class="card-header">
+    <h5><i class="bi bi-clock"></i> Usage by Compilation Duration</h5>
+  </div>
+  <div class="card-body">
+    <div class="row">
+      {% for duration_data in duration_analysis %}
+      <div class="col-md-4 mb-3">
+        <div class="card border-start border-4 border-info">
+          <div class="card-body">
+            <h6>{{ duration_data.duration_minutes }} Minute Compilations</h6>
+            <p class="mb-1">
+              <strong>{{ duration_data.compilation_count }}</strong> compilations<br>
+              <strong>{{ duration_data.unique_videos_used }}</strong> unique videos used<br>
+              <strong>{{ duration_data.total_video_instances }}</strong> total video instances
+            </p>
+            <div class="progress progress-custom">
+              <div class="progress-bar bg-info"
+                style="width: {{ (duration_data.compilation_count / duration_analysis | map(attribute='compilation_count') | max * 100) if duration_analysis | map(attribute='compilation_count') | max > 0 else 0 }}%">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    initializeUsageCharts();
+  });
+
+  function initializeUsageCharts() {
+    // Usage Distribution Chart
+    const usageCtx = document.getElementById('usageDistributionChart').getContext('2d');
+    new Chart(usageCtx, {
+      type: 'bar',
+      data: {
+        labels: ['Never Used', '1-2 Uses', '3-5 Uses', '6-10 Uses', '10+ Uses'],
+        datasets: [{
+          label: 'Number of Videos',
+          data: [
+            {{ usage_distribution.never_used if usage_distribution else 0 }},
+        {{ usage_distribution.low_usage if usage_distribution else 0 }},
+            {{ usage_distribution.medium_usage if usage_distribution else 0 }},
+  { { usage_distribution.high_usage if usage_distribution else 0 } },
+  { { usage_distribution.very_high_usage if usage_distribution else 0 } }
+          ],
+  backgroundColor: [
+    '#95a5a6',
+    '#3498db',
+    '#f39c12',
+    '#e67e22',
+    '#e74c3c'
+  ]
+        }]
+      },
+  options: {
+    responsive: true,
+      maintainAspectRatio: false,
+        scales: {
+      y: {
+        beginAtZero: true
+      }
+    }
+  }
+    });
+
+  // First Video Preferences Chart
+  const firstVideoCtx = document.getElementById('firstVideoChart').getContext('2d');
+  new Chart(firstVideoCtx, {
+    type: 'doughnut',
+    data: {
+      labels: ['High Retention First', 'Medium Retention First', 'Low Retention First'],
+      datasets: [{
+        data: [
+          {{ first_video_stats.high_retention if first_video_stats else 0 }},
+      {{ first_video_stats.medium_retention if first_video_stats else 0 }},
+            {{ first_video_stats.low_retention if first_video_stats else 0 }}
+          ],
+    backgroundColor: [
+    '#27ae60',
+    '#f39c12',
+    '#e74c3c'
+  ]
+        }]
+      },
+    options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        position: 'bottom'
+      }
+    }
+  }
+    });
+  }
+
+  function exportUsageStats() {
+    showLoading(true);
+
+    fetch('/export_usage_stats')
+      .then(response => response.blob())
+      .then(blob => {
+        showLoading(false);
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'video_usage_stats_' + new Date().toISOString().split('T')[0] + '.csv';
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        showAlert('Usage statistics exported successfully', 'success');
+      })
+      .catch(error => {
+        showLoading(false);
+        showAlert('Export failed', 'danger');
+      });
+  }
+</script>
+{% endblock %}

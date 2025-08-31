@@ -1,0 +1,236 @@
+{% extends "base.html" %}
+{% block title %}Videos Dashboard - Video Analytics{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h2><i class="bi bi-collection-play text-primary"></i> Video Dashboard</h2>
+  <div>
+    <a href="/import" class="btn btn-outline-primary me-2">
+      <i class="bi bi-upload"></i> Import Videos
+    </a>
+    <a href="/create-compilation" class="btn btn-primary">
+      <i class="bi bi-plus-circle"></i> Create Compilation
+    </a>
+  </div>
+</div>
+
+<!-- Quick Statistics Overview -->
+{% if quick_stats %}
+<div class="row mb-4">
+  <div class="col-md-3">
+    <div class="stats-card bg-primary">
+      <span class="stats-number">{{ quick_stats.total_videos }}</span>
+      <span>Total Videos</span>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="stats-card bg-success">
+      <span class="stats-number">{{ quick_stats.compilations }}</span>
+      <span>Compilations</span>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="stats-card bg-info">
+      <span class="stats-number">{{ quick_stats.high_retention }}</span>
+      <span>High Retention</span>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="stats-card bg-warning">
+      <span class="stats-number">{{ quick_stats.user_compilations }}</span>
+      <span>User Compilations</span>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Advanced Filters -->
+<div class="card-custom mb-4">
+  <div class="card-body">
+    <form method="GET" class="row g-3">
+      <div class="col-md-4">
+        <label for="search" class="form-label">Search Videos</label>
+        <div class="input-group">
+          <span class="input-group-text"><i class="bi bi-search"></i></span>
+          <input type="text" class="form-control" id="search" name="search" value="{{ search_query }}"
+            placeholder="Search titles, descriptions...">
+        </div>
+      </div>
+      <div class="col-md-2">
+        <label for="actor" class="form-label">Actor Filter</label>
+        <select class="form-select" id="actor" name="actor">
+          <option value="">All Videos</option>
+          <option value="true" {% if actor_filter=='true' %}selected{% endif %}>Actor Videos</option>
+          <option value="false" {% if actor_filter=='false' %}selected{% endif %}>Non-Actor</option>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label for="compilation" class="form-label">Type</label>
+        <select class="form-select" id="compilation" name="compilation">
+          <option value="">All Types</option>
+          <option value="true" {% if compilation_filter=='true' %}selected{% endif %}>Compilations</option>
+          <option value="false" {% if compilation_filter=='false' %}selected{% endif %}>Individual</option>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label for="retention" class="form-label">Retention</label>
+        <select class="form-select" id="retention" name="retention">
+          <option value="">All Retention</option>
+          <option value="high" {% if retention_filter=='high' %}selected{% endif %}>High (70%+)</option>
+          <option value="medium" {% if retention_filter=='medium' %}selected{% endif %}>Medium (50-70%)</option>
+          <option value="low" {% if retention_filter=='low' %}selected{% endif %}>Low (&lt;50%)</option>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">&nbsp;</label>
+        <div class="d-grid">
+          <button type="submit" class="btn btn-primary">
+            <i class="bi bi-funnel"></i> Filter
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Videos Grid -->
+<div class="row">
+  {% for video in videos %}
+  <div class="col-lg-4 col-md-6 mb-4">
+    <div class="card-custom h-100">
+      <div class="card-body">
+        <div class="d-flex justify-content-between mb-2">
+          <div class="flex-grow-1">
+            <h6 class="card-title">
+              <a href="/video/{{ video.video_id }}" class="text-decoration-none">
+                {{ video.title[:50] }}{% if video.title|length > 50 %}...{% endif %}
+              </a>
+            </h6>
+          </div>
+          <div class="ms-2">
+            {% if video.is_compilation %}
+            <span class="badge bg-success"><i class="bi bi-collection-play"></i></span>
+            {% endif %}
+            {% if video.actor %}
+            <span class="badge bg-info"><i class="bi bi-person"></i></span>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="row text-muted small mb-3">
+          <div class="col-6">
+            <i class="bi bi-eye"></i> {{ "{:,}".format(video.view_count) }}
+          </div>
+          <div class="col-6">
+            <i class="bi bi-heart"></i> {{ "{:,}".format(video.like_count) }}
+          </div>
+          <div class="col-6">
+            <i class="bi bi-clock"></i> {{ (video.duration_seconds // 60) }}:{{ "{:02d}".format(video.duration_seconds %
+            60) }}
+          </div>
+          <div class="col-6">
+            <i class="bi bi-graph-up"></i> {{ video.average_view_percentage }}%
+          </div>
+        </div>
+
+        <!-- Retention Progress Bar -->
+        <div class="mb-3">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <small class="text-muted">Retention Rate</small>
+            <small class="text-muted">{{ video.average_view_percentage }}%</small>
+          </div>
+          <div class="progress progress-custom">
+            <div class="progress-bar 
+                        {% if video.average_view_percentage >= 70 %}bg-success
+                        {% elif video.average_view_percentage >= 50 %}bg-warning
+                        {% else %}bg-danger{% endif %}" style="width: {{ video.average_view_percentage }}%">
+            </div>
+          </div>
+        </div>
+
+        <!-- Usage Statistics -->
+        {% if video.user_compilation_usage and video.user_compilation_usage.total_inclusions > 0 %}
+        <div class="alert alert-info py-2">
+          <small>
+            <i class="bi bi-recycle"></i>
+            Used {{ video.user_compilation_usage.total_inclusions }} times in compilations
+          </small>
+        </div>
+        {% endif %}
+
+        <div class="d-grid gap-2 d-md-flex">
+          <a href="/video/{{ video.video_id }}" class="btn btn-outline-primary btn-sm flex-fill">
+            <i class="bi bi-eye"></i> View Details
+          </a>
+          <button class="btn btn-outline-secondary btn-sm" onclick="copyVideoId('{{ video.video_id }}')">
+            <i class="bi bi-clipboard"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Pagination -->
+{% if total_pages > 1 %}
+<nav class="mt-4">
+  <ul class="pagination justify-content-center">
+    {% if has_prev %}
+    <li class="page-item">
+      <a class="page-link"
+        href="?page={{ page - 1 }}{% if search_query %}&search={{ search_query }}{% endif %}{% if actor_filter %}&actor={{ actor_filter }}{% endif %}{% if compilation_filter %}&compilation={{ compilation_filter }}{% endif %}{% if retention_filter %}&retention={{ retention_filter }}{% endif %}">
+        <i class="bi bi-chevron-left"></i>
+      </a>
+    </li>
+    {% endif %}
+
+    {% for page_num in range(max(1, page - 2), min(total_pages + 1, page + 3)) %}
+    {% if page_num == page %}
+    <li class="page-item active">
+      <span class="page-link">{{ page_num }}</span>
+    </li>
+    {% else %}
+    <li class="page-item">
+      <a class="page-link"
+        href="?page={{ page_num }}{% if search_query %}&search={{ search_query }}{% endif %}{% if actor_filter %}&actor={{ actor_filter }}{% endif %}{% if compilation_filter %}&compilation={{ compilation_filter }}{% endif %}{% if retention_filter %}&retention={{ retention_filter }}{% endif %}">
+        {{ page_num }}
+      </a>
+    </li>
+    {% endif %}
+    {% endfor %}
+
+    {% if has_next %}
+    <li class="page-item">
+      <a class="page-link"
+        href="?page={{ page + 1 }}{% if search_query %}&search={{ search_query }}{% endif %}{% if actor_filter %}&actor={{ actor_filter }}{% endif %}{% if compilation_filter %}&compilation={{ compilation_filter }}{% endif %}{% if retention_filter %}&retention={{ retention_filter }}{% endif %}">
+        <i class="bi bi-chevron-right"></i>
+      </a>
+    </li>
+    {% endif %}
+  </ul>
+</nav>
+{% endif %}
+
+<!-- No Results Message -->
+{% if not videos %}
+<div class="text-center py-5">
+  <i class="bi bi-collection text-muted" style="font-size: 4rem;"></i>
+  <h4 class="text-muted mt-3">No Videos Found</h4>
+  <p class="text-muted">Try adjusting your search criteria or <a href="/import">import some videos</a> to get started.
+  </p>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  function copyVideoId(videoId) {
+    navigator.clipboard.writeText(videoId).then(function () {
+      showAlert('Video ID copied to clipboard', 'success');
+    }).catch(function () {
+      showAlert('Failed to copy video ID', 'danger');
+    });
+  }
+</script>
+{% endblock %}

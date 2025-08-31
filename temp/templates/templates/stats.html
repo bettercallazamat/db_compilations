@@ -1,0 +1,58 @@
+<!-- templates/stats.html -->
+{% extends "base.html" %}
+{% block title %}Statistics - Video Analytics{% endblock %}
+
+{% block content %}
+<h1 class="mb-4">Overall Statistics</h1>
+
+{% if stats %}
+<div class="table-responsive">
+  <table class="table table-striped table-hover shadow-sm">
+    <thead class="table-dark">
+      <tr>
+        <th>Metric</th>
+        <th>Value</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Total Videos</td>
+        <td>{{ "{:,}".format(stats.total_videos) }}</td>
+      </tr>
+      <tr>
+        <td>Total Compilations</td>
+        <td>{{ "{:,}".format(stats.total_compilations) }}</td>
+      </tr>
+      <tr>
+        <td>Total Views</td>
+        <td>{{ "{:,}".format(stats.total_views) }}</td>
+      </tr>
+      <tr>
+        <td>Total Likes</td>
+        <td>{{ "{:,}".format(stats.total_likes) }}</td>
+      </tr>
+      <tr>
+        <td>Total Comments</td>
+        <td>{{ "{:,}".format(stats.total_comments) }}</td>
+      </tr>
+      <tr>
+        <td>Average View Duration (seconds)</td>
+        <td>{{ stats.avg_view_duration }}</td>
+      </tr>
+      <tr>
+        <td>Average View Percentage</td>
+        <td>{{ stats.avg_view_percentage }}%</td>
+      </tr>
+      <tr>
+        <td>Average Retention @ 30s</td>
+        <td>{{ stats.avg_retention_30s }}%</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="alert alert-info">
+  No statistics available yet. You may need to <a href="/import" class="alert-link">import data</a> first.
+</div>
+{% endif %}
+{% endblock %}

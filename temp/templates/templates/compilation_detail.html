@@ -1,0 +1,68 @@
+<!-- templates/compilation_detail.html -->
+{% extends "base.html" %}
+{% block title %}{{ video.title }} - Compilation Details{% endblock %}
+
+{% block content %}
+<h1 class="mb-4">Compilation Details</h1>
+
+<!-- Main Compilation Info -->
+<div class="card mb-4 shadow-sm">
+  <div class="row g-0">
+    <div class="col-md-4">
+      <img src="{{ video.thumbnail_url }}" class="img-fluid rounded-start" alt="{{ video.title }}">
+    </div>
+    <div class="col-md-8">
+      <div class="card-body">
+        <h3 class="card-title">{{ video.title }}</h3>
+        <p><strong>Published:</strong> {{ video.published_at }}</p>
+        <p><strong>Duration:</strong> {{ video.duration }}</p>
+        <p><strong>Views:</strong> {{ "{:,}".format(video.view_count) }}</p>
+        <p><strong>Likes:</strong> {{ "{:,}".format(video.like_count) }}</p>
+        <p><strong>Comments:</strong> {{ "{:,}".format(video.comment_count) }}</p>
+        <p><strong>Average View Duration:</strong> {{ video.average_view_duration }} sec</p>
+        <p><strong>Average View %:</strong> {{ video.average_view_percentage }}%</p>
+        <p><strong>30s Retention:</strong> {{ video.retention_30s }}%</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Description -->
+<h4>Description</h4>
+<pre class="bg-light p-3 rounded">{{ video.description }}</pre>
+
+<!-- Timestamp Segments -->
+{% if segments %}
+<h4 class="mt-4">Segment Breakdown</h4>
+<div class="table-responsive">
+  <table class="table table-striped table-hover shadow-sm align-middle">
+    <thead class="table-dark">
+      <tr>
+        <th>Start Time</th>
+        <th>Title</th>
+        <th>Duration (min)</th>
+        <th>Views</th>
+        <th>Average View %</th>
+        <th>Retention @ 30s</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for seg in segments %}
+      <tr>
+        <td>{{ seg.time }}</td>
+        <td>{{ seg.title }}</td>
+        <td>{{ seg.duration }}</td>
+        <td>{{ "{:,}".format(seg.views) if seg.views is not none else "-" }}</td>
+        <td>{{ seg.avg_view_percentage if seg.avg_view_percentage is not none else "-" }}%</td>
+        <td>{{ seg.retention_30s if seg.retention_30s is not none else "-" }}%</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="alert alert-warning">
+  No timestamp segments were found for this compilation.
+</div>
+{% endif %}
+{% endblock %}

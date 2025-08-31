@@ -1,0 +1,384 @@
+{% extends "base.html" %}
+
+{% block title %}Video Analytics - Dashboard{% endblock %}
+
+{% block content %}
+<!-- Quick Stats Section -->
+{% if quick_stats %}
+<div class="row mb-4">
+  <div class="col-12">
+    <div class="stats-card">
+      <div class="row text-center">
+        <div class="col-md-3 col-sm-6 mb-3 mb-md-0">
+          <h3 class="mb-1">
+            <i class="fas fa-video me-2"></i>{{ quick_stats.total_videos|default(0) }}
+          </h3>
+          <small>Total Videos</small>
+        </div>
+        <div class="col-md-3 col-sm-6 mb-3 mb-md-0">
+          <h3 class="mb-1">
+            <i class="fas fa-layer-group me-2"></i>{{ quick_stats.compilations|default(0) }}
+          </h3>
+          <small>Compilations</small>
+        </div>
+        <div class="col-md-3 col-sm-6 mb-3 mb-md-0">
+          <h3 class="mb-1">
+            <i class="fas fa-chart-line me-2"></i>{{ quick_stats.high_retention|default(0) }}
+          </h3>
+          <small>High Retention (70%+)</small>
+        </div>
+        <div class="col-md-3 col-sm-6">
+          <h3 class="mb-1">
+            <i class="fas fa-user-plus me-2"></i>{{ quick_stats.user_compilations|default(0) }}
+          </h3>
+          <small>User Created</small>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Filters Section -->
+<div class="filter-section">
+  <form method="GET" class="row g-3">
+    <div class="col-md-4">
+      <label for="search" class="form-label">
+        <i class="fas fa-search me-1"></i>Search Videos
+      </label>
+      <input type="text" class="form-control" id="search" name="search" value="{{ search_query|default('') }}"
+        placeholder="Search by title or description...">
+    </div>
+
+    <div class="col-md-2">
+      <label for="actor" class="form-label">
+        <i class="fas fa-user me-1"></i>Actor Filter
+      </label>
+      <select class="form-select" id="actor" name="actor">
+        <option value="">All Videos</option>
+        <option value="true" {% if actor_filter=='true' %}selected{% endif %}>Actor Videos Only</option>
+        <option value="false" {% if actor_filter=='false' %}selected{% endif %}>Non-Actor Videos</option>
+      </select>
+    </div>
+
+    <div class="col-md-2">
+      <label for="compilation" class="form-label">
+        <i class="fas fa-layer-group me-1"></i>Type Filter
+      </label>
+      <select class="form-select" id="compilation" name="compilation">
+        <option value="">All Types</option>
+        <option value="true" {% if compilation_filter=='true' %}selected{% endif %}>Compilations</option>
+        <option value="false" {% if compilation_filter=='false' %}selected{% endif %}>Single Videos</option>
+      </select>
+    </div>
+
+    <div class="col-md-2">
+      <label for="retention" class="form-label">
+        <i class="fas fa-chart-line me-1"></i>Retention Rate
+      </label>
+      <select class="form-select" id="retention" name="retention">
+        <option value="">All Retention</option>
+        <option value="high" {% if retention_filter=='high' %}selected{% endif %}>High (70%+)</option>
+        <option value="medium" {% if retention_filter=='medium' %}selected{% endif %}>Medium (50-70%)</option>
+        <option value="low" {% if retention_filter=='low' %}selected{% endif %}>Low (&lt;50%)</option>
+      </select>
+    </div>
+
+    <div class="col-md-2 d-flex align-items-end gap-2">
+      <button type="submit" class="btn btn-primary">
+        <i class="fas fa-filter me-1"></i>Apply Filters
+      </button>
+      <a href="/" class="btn btn-outline-secondary">
+        <i class="fas fa-times me-1"></i>Clear
+      </a>
+    </div>
+  </form>
+</div>
+
+<!-- Results Summary -->
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h5 class="mb-0">
+    <i class="fas fa-list me-2"></i>
+    Video Results
+    <span class="badge bg-primary">{{ total|default(0) }} total</span>
+  </h5>
+  <div class="text-muted">
+    {% if total > 0 %}
+    Showing page {{ page|default(1) }} of {{ total_pages|default(1) }}
+    {% else %}
+    No videos found
+    {% endif %}
+  </div>
+</div>
+
+<!-- Videos Table -->
+{% if videos and videos|length > 0 %}
+<div class="table-container">
+  <div class="table-responsive">
+    <table class="table table-hover">
+      <thead class="table-dark sticky-top">
+        <tr>
+          <th style="width: 100px;">Thumbnail</th>
+          <th style="width: 300px;">Title</th>
+          <th style="width: 120px;">Duration</th>
+          <th style="width: 100px;">Views</th>
+          <th style="width: 80px;">Likes</th>
+          <th style="width: 120px;">Retention</th>
+          <th style="width: 100px;">Type</th>
+          <th style="width: 120px;">Published</th>
+          <th style="width: 80px;">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for video in videos %}
+        <tr>
+          <!-- Thumbnail -->
+          <td>
+            {% if video.thumbnail_url %}
+            <img src="{{ video.thumbnail_url }}" alt="Thumbnail" class="video-thumbnail">
+            {% else %}
+            <div class="video-thumbnail d-flex align-items-center justify-content-center bg-light">
+              <i class="fas fa-video text-muted"></i>
+            </div>
+            {% endif %}
+          </td>
+
+          <!-- Title -->
+          <td>
+            <div class="video-title" title="{{ video.title }}">
+              <strong>{{ video.title|truncate(50) }}</strong>
+            </div>
+            <small class="text-muted">ID: {{ video.video_id }}</small>
+          </td>
+
+          <!-- Duration -->
+          <td>
+            <span class="metric-value">
+              {% if video.duration_seconds %}
+              {% set minutes = (video.duration_seconds // 60)|int %}
+              {% set seconds = (video.duration_seconds % 60)|int %}
+              {{ minutes }}:{{ "{:02d}".format(seconds) }}
+              {% else %}
+              {{ video.duration|default('N/A') }}
+              {% endif %}
+            </span>
+          </td>
+
+          <!-- Views -->
+          <td>
+            <span class="metric-value">
+              {% if video.view_count %}
+              {{ "{:,}".format(video.view_count) }}
+              {% else %}
+              0
+              {% endif %}
+            </span>
+          </td>
+
+          <!-- Likes -->
+          <td>
+            <span class="metric-value">
+              {% if video.like_count %}
+              {{ "{:,}".format(video.like_count) }}
+              {% else %}
+              0
+              {% endif %}
+            </span>
+          </td>
+
+          <!-- Retention -->
+          <td>
+            {% set retention = videos_collection.find_one({'video_id': video.video_id}).retention_30s|default(0) %}
+            <div class="retention-bar mb-1">
+              <div class="retention-fill 
+                                {% if retention >= 70 %}retention-high
+                                {% elif retention >= 50 %}retention-medium
+                                {% else %}retention-low{% endif %}" style="width: {{ retention }}%">
+              </div>
+            </div>
+            <small class="
+                            {% if retention >= 70 %}text-success
+                            {% elif retention >= 50 %}text-warning
+                            {% else %}text-danger{% endif %}">
+              {{ retention|round(1) }}%
+            </small>
+          </td>
+
+          <!-- Type & Status -->
+          <td>
+            <div class="d-flex flex-column gap-1">
+              {% if video.is_compilation %}
+              <span class="badge badge-compilation">
+                <i class="fas fa-layer-group me-1"></i>Compilation
+              </span>
+              {% endif %}
+
+              {% if video.actor %}
+              <span class="badge badge-actor">
+                <i class="fas fa-user me-1"></i>Actor
+              </span>
+              {% endif %}
+
+              {% if not video.is_compilation and not video.actor %}
+              <span class="badge bg-secondary">
+                <i class="fas fa-play me-1"></i>Regular
+              </span>
+              {% endif %}
+            </div>
+          </td>
+
+          <!-- Published Date -->
+          <td>
+            <small>{{ video.published_at|default('Unknown') }}</small>
+          </td>
+
+          <!-- Actions -->
+          <td>
+            <div class="btn-group btn-group-sm" role="group">
+              <a href="/video_detail/{{ video.video_id }}" class="btn btn-outline-primary" data-bs-toggle="tooltip"
+                title="View Details">
+                <i class="fas fa-eye"></i>
+              </a>
+
+              {% if video.is_compilation %}
+              <a href="/compilation_detail/{{ video.video_id }}" class="btn btn-outline-info" data-bs-toggle="tooltip"
+                title="Compilation Details">
+                <i class="fas fa-layer-group"></i>
+              </a>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Pagination -->
+{% if total_pages and total_pages > 1 %}
+<nav aria-label="Video pagination" class="mt-4">
+  <ul class="pagination justify-content-center">
+    <!-- Previous Page -->
+    {% if has_prev %}
+    <li class="page-item">
+      <a class="page-link"
+        href="?page={{ page - 1 }}{% if search_query %}&search={{ search_query }}{% endif %}{% if actor_filter %}&actor={{ actor_filter }}{% endif %}{% if compilation_filter %}&compilation={{ compilation_filter }}{% endif %}{% if retention_filter %}&retention={{ retention_filter }}{% endif %}">
+        <i class="fas fa-chevron-left me-1"></i>Previous
+      </a>
+    </li>
+    {% else %}
+    <li class="page-item disabled">
+      <span class="page-link">
+        <i class="fas fa-chevron-left me-1"></i>Previous
+      </span>
+    </li>
+    {% endif %}
+
+    <!-- Page Numbers -->
+    {% for page_num in range(1, total_pages + 1) %}
+    {% if page_num == page %}
+    <li class="page-item active">
+      <span class="page-link">{{ page_num }}</span>
+    </li>
+    {% elif page_num <= 3 or page_num> total_pages - 3 or (page_num >= page - 2 and page_num <= page + 2) %} <li
+        class="page-item">
+        <a class="page-link"
+          href="?page={{ page_num }}{% if search_query %}&search={{ search_query }}{% endif %}{% if actor_filter %}&actor={{ actor_filter }}{% endif %}{% if compilation_filter %}&compilation={{ compilation_filter }}{% endif %}{% if retention_filter %}&retention={{ retention_filter }}{% endif %}">{{
+          page_num }}</a>
+        </li>
+        {% elif page_num == 4 and page > 6 %}
+        <li class="page-item disabled">
+          <span class="page-link">...</span>
+        </li>
+        {% elif page_num == total_pages - 3 and page < total_pages - 5 %} <li class="page-item disabled">
+          <span class="page-link">...</span>
+          </li>
+          {% endif %}
+          {% endfor %}
+
+          <!-- Next Page -->
+          {% if has_next %}
+          <li class="page-item">
+            <a class="page-link"
+              href="?page={{ page + 1 }}{% if search_query %}&search={{ search_query }}{% endif %}{% if actor_filter %}&actor={{ actor_filter }}{% endif %}{% if compilation_filter %}&compilation={{ compilation_filter }}{% endif %}{% if retention_filter %}&retention={{ retention_filter }}{% endif %}">
+              Next<i class="fas fa-chevron-right ms-1"></i>
+            </a>
+          </li>
+          {% else %}
+          <li class="page-item disabled">
+            <span class="page-link">
+              Next<i class="fas fa-chevron-right ms-1"></i>
+            </span>
+          </li>
+          {% endif %}
+  </ul>
+</nav>
+{% endif %}
+
+{% else %}
+<!-- No Videos Found -->
+<div class="text-center py-5">
+  <div class="mb-4">
+    <i class="fas fa-video fa-4x text-muted"></i>
+  </div>
+  <h4 class="text-muted mb-3">No Videos Found</h4>
+  <p class="text-muted mb-4">
+    {% if search_query or actor_filter or compilation_filter or retention_filter %}
+    No videos match your current filters. Try adjusting your search criteria.
+    {% else %}
+    It looks like you haven't imported any videos yet.
+    {% endif %}
+  </p>
+  <div class="d-flex justify-content-center gap-3">
+    {% if search_query or actor_filter or compilation_filter or retention_filter %}
+    <a href="/" class="btn btn-primary">
+      <i class="fas fa-times me-2"></i>Clear Filters
+    </a>
+    {% endif %}
+    <a href="/import" class="btn btn-success">
+      <i class="fas fa-upload me-2"></i>Import Videos
+    </a>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  // Auto-submit form on filter change (optional)
+  document.addEventListener('DOMContentLoaded', function () {
+    const filterSelects = document.querySelectorAll('#actor, #compilation, #retention');
+
+    filterSelects.forEach(function (select) {
+      select.addEventListener('change', function () {
+        // Optional: Auto-submit form when filter changes
+        // this.form.submit();
+      });
+    });
+
+    // Format large numbers in the table
+    document.querySelectorAll('.metric-value').forEach(function (element) {
+      const text = element.textContent.trim();
+      if (!isNaN(text) && text !== '') {
+        const num = parseInt(text);
+        if (num >= 1000) {
+          element.textContent = formatNumber(num);
+        }
+      }
+    });
+  });
+
+  // Search form enhancement
+  const searchForm = document.querySelector('form');
+  const searchInput = document.querySelector('#search');
+
+  if (searchInput) {
+    searchInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        searchForm.submit();
+      }
+    });
+  }
+</script>
+{% endblock %}

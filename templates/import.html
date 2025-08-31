@@ -1,0 +1,567 @@
+{% extends "base.html" %}
+
+{% block title %}Import Videos - Video Analytics{% endblock %}
+
+{% block content %}
+<!-- Import Header -->
+<div class="row mb-4">
+  <div class="col-12">
+    <div class="stats-card">
+      <div class="row align-items-center">
+        <div class="col-md-8">
+          <h2 class="mb-1">
+            <i class="fas fa-upload me-2"></i>Import Video Data
+          </h2>
+          <p class="mb-0 opacity-75">
+            Upload JSON files containing video data to populate your database
+          </p>
+        </div>
+        <div class="col-md-4 text-end">
+          <i class="fas fa-database fa-3x opacity-50"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Import Form -->
+<div class="row">
+  <div class="col-md-8 mx-auto">
+    <div class="card shadow">
+      <div class="card-header bg-primary text-white">
+        <h5 class="mb-0">
+          <i class="fas fa-file-upload me-2"></i>Upload JSON File
+        </h5>
+      </div>
+      <div class="card-body">
+        <form id="importForm" enctype="multipart/form-data">
+          <!-- File Upload Area -->
+          <div class="mb-4">
+            <div id="drop-zone" class="border rounded p-4 text-center position-relative"
+              style="border: 2px dashed #dee2e6; background-color: #f8f9fa; cursor: pointer; transition: all 0.3s ease;">
+              <div id="drop-content">
+                <i class="fas fa-cloud-upload-alt fa-3x text-muted mb-3"></i>
+                <h5>Drag & Drop JSON File Here</h5>
+                <p class="text-muted mb-3">or click to browse files</p>
+                <input type="file" id="file-input" name="json_file" accept=".json"
+                  class="position-absolute w-100 h-100 opacity-0" style="top: 0; left: 0; cursor: pointer;">
+                <button type="button" class="btn btn-outline-primary">
+                  <i class="fas fa-folder-open me-2"></i>Browse Files
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Selected File Info -->
+          <div id="file-info" class="d-none">
+            <div class="alert alert-info">
+              <div class="d-flex align-items-center justify-content-between">
+                <div>
+                  <i class="fas fa-file-alt me-2"></i>
+                  <strong id="file-name">No file selected</strong>
+                  <small class="text-muted d-block" id="file-size">0 KB</small>
+                </div>
+                <button type="button" id="remove-file" class="btn btn-sm btn-outline-danger">
+                  <i class="fas fa-times"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Import Options -->
+          <div class="mb-4">
+            <h6><i class="fas fa-cog me-2"></i>Import Options</h6>
+            <div class="form-check mb-2">
+              <input class="form-check-input" type="checkbox" id="skip-existing" name="skip_existing" checked>
+              <label class="form-check-label" for="skip-existing">
+                Skip existing videos (recommended)
+              </label>
+            </div>
+            <div class="form-check mb-2">
+              <input class="form-check-input" type="checkbox" id="update-existing" name="update_existing">
+              <label class="form-check-label" for="update-existing">
+                Update existing video data
+              </label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="validate-data" name="validate_data" checked>
+              <label class="form-check-label" for="validate-data">
+                Validate data before import
+              </label>
+            </div>
+          </div>
+
+          <!-- Submit Button -->
+          <div class="d-grid">
+            <button type="submit" id="import-btn" class="btn btn-primary btn-lg" disabled>
+              <i class="fas fa-upload me-2"></i>Import Videos
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Progress Section -->
+<div class="row mt-4 d-none" id="progress-section">
+  <div class="col-md-8 mx-auto">
+    <div class="card shadow">
+      <div class="card-header">
+        <h5 class="mb-0">
+          <i class="fas fa-tasks me-2"></i>Import Progress
+        </h5>
+      </div>
+      <div class="card-body">
+        <div class="progress mb-3" style="height: 20px;">
+          <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar"
+            style="width: 0%">0%</div>
+        </div>
+        <div id="progress-text" class="text-center text-muted">
+          Preparing import...
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Results Section -->
+<div class="row mt-4 d-none" id="results-section">
+  <div class="col-md-8 mx-auto">
+    <div class="card shadow">
+      <div class="card-header">
+        <h5 class="mb-0">
+          <i class="fas fa-chart-bar me-2"></i>Import Results
+        </h5>
+      </div>
+      <div class="card-body">
+        <div id="results-content">
+          <!-- Results will be populated here -->
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Expected JSON Format -->
+<div class="row mt-4">
+  <div class="col-12">
+    <div class="card">
+      <div class="card-header">
+        <h5 class="mb-0">
+          <i class="fas fa-info-circle me-2"></i>Expected JSON Format
+        </h5>
+      </div>
+      <div class="card-body">
+        <p class="text-muted mb-3">
+          Your JSON file should contain a "videos" array with the following structure:
+        </p>
+
+        <div class="bg-light p-3 rounded">
+          <pre class="mb-0"><code>{
+  "videos": [
+    {
+      "title": "Video Title",
+      "video_id": "unique_video_id",
+      "published_at": "2024-01-01",
+      "description": "Video description",
+      "thumbnail_url": "https://example.com/thumbnail.jpg",
+      "duration": "5:30",
+      "duration_seconds": 330,
+      "view_count": 1000,
+      "like_count": 50,
+      "comment_count": 10,
+      "estimated_minutes_watched": 2500,
+      "average_view_duration": 150,
+      "average_view_percentage": 45.5,
+      "retention_30s": 85.2
+    }
+  ]
+}</code></pre>
+        </div>
+
+        <div class="mt-3">
+          <h6>Required Fields:</h6>
+          <ul class="list-unstyled">
+            <li><i class="fas fa-check text-success me-2"></i><code>title</code> - Video title</li>
+            <li><i class="fas fa-check text-success me-2"></i><code>video_id</code> - Unique identifier</li>
+          </ul>
+
+          <h6 class="mt-3">Optional Fields:</h6>
+          <ul class="list-unstyled">
+            <li><i class="fas fa-circle text-muted me-2" style="font-size: 0.5em;"></i><code>published_at</code> -
+              Publication date</li>
+            <li><i class="fas fa-circle text-muted me-2" style="font-size: 0.5em;"></i><code>description</code> - Video
+              description</li>
+            <li><i class="fas fa-circle text-muted me-2" style="font-size: 0.5em;"></i><code>thumbnail_url</code> -
+              Thumbnail image URL</li>
+            <li><i class="fas fa-circle text-muted me-2" style="font-size: 0.5em;"></i><code>duration_seconds</code> -
+              Duration in seconds</li>
+            <li><i class="fas fa-circle text-muted me-2" style="font-size: 0.5em;"></i><code>view_count</code> - Number
+              of views</li>
+            <li><i class="fas fa-circle text-muted me-2"
+                style="font-size: 0.5em;"></i><code>average_view_percentage</code> - Retention percentage</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Import History -->
+<!-- <div class="row mt-4">
+  <div class="col-12">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">
+          <i class="fas fa-history me-2"></i>Recent Imports
+        </h5>
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadImportHistory()">
+          <i class="fas fa-sync me-1"></i>Refresh
+        </button>
+      </div>
+      <div class="card-body">
+        <div id="import-history">
+          <div class="text-center text-muted py-4">
+            <i class="fas fa-clock fa-2x mb-2"></i>
+            <p>Loading import history...</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div> -->
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const fileInfo = document.getElementById('file-info');
+    const fileName = document.getElementById('file-name');
+    const fileSize = document.getElementById('file-size');
+    const removeFileBtn = document.getElementById('remove-file');
+    const importBtn = document.getElementById('import-btn');
+    const importForm = document.getElementById('importForm');
+    const progressSection = document.getElementById('progress-section');
+    const progressBar = document.getElementById('progress-bar');
+    const progressText = document.getElementById('progress-text');
+    const resultsSection = document.getElementById('results-section');
+    const resultsContent = document.getElementById('results-content');
+
+    // Drag and drop functionality
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+      dropZone.addEventListener(eventName, preventDefaults, false);
+    });
+
+    function preventDefaults(e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    ['dragenter', 'dragover'].forEach(eventName => {
+      dropZone.addEventListener(eventName, highlight, false);
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+      dropZone.addEventListener(eventName, unhighlight, false);
+    });
+
+    function highlight(e) {
+      dropZone.style.borderColor = '#007bff';
+      dropZone.style.backgroundColor = '#e3f2fd';
+    }
+
+    function unhighlight(e) {
+      dropZone.style.borderColor = '#dee2e6';
+      dropZone.style.backgroundColor = '#f8f9fa';
+    }
+
+    dropZone.addEventListener('drop', handleDrop, false);
+
+    function handleDrop(e) {
+      const dt = e.dataTransfer;
+      const files = dt.files;
+      handleFiles(files);
+    }
+
+    fileInput.addEventListener('change', function (e) {
+      handleFiles(e.target.files);
+    });
+
+    function handleFiles(files) {
+      if (files.length > 0) {
+        const file = files[0];
+        if (file.type === 'application/json' || file.name.endsWith('.json')) {
+          showFileInfo(file);
+          importBtn.disabled = false;
+        } else {
+          showAlert('Please select a valid JSON file.', 'warning');
+        }
+      }
+    }
+
+    function showFileInfo(file) {
+      fileName.textContent = file.name;
+      fileSize.textContent = formatFileSize(file.size);
+      fileInfo.classList.remove('d-none');
+      dropZone.classList.add('d-none');
+    }
+
+    function hideFileInfo() {
+      fileInfo.classList.add('d-none');
+      dropZone.classList.remove('d-none');
+      importBtn.disabled = true;
+      fileInput.value = '';
+    }
+
+    removeFileBtn.addEventListener('click', hideFileInfo);
+
+    function formatFileSize(bytes) {
+      if (bytes === 0) return '0 Bytes';
+      const k = 1024;
+      const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    // Form submission - CORRECTED ENDPOINT
+    importForm.addEventListener('submit', function (e) {
+      e.preventDefault();
+
+      const formData = new FormData();
+      formData.append('json_file', fileInput.files[0]);
+      formData.append('skip_existing', document.getElementById('skip-existing').checked);
+      formData.append('update_existing', document.getElementById('update-existing').checked);
+      formData.append('validate_data', document.getElementById('validate-data').checked);
+
+      startImport(formData);
+    });
+
+    function startImport(formData) {
+      // Show progress section
+      progressSection.classList.remove('d-none');
+      resultsSection.classList.add('d-none');
+      importBtn.disabled = true;
+      importBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Importing...';
+
+      // Simulate progress
+      let progress = 0;
+      const progressInterval = setInterval(() => {
+        progress += Math.random() * 15;
+        if (progress > 90) progress = 90;
+        updateProgress(progress, 'Processing videos...');
+      }, 800);
+
+      // Make the actual request - CORRECTED ENDPOINT
+      fetch('/import-videos', {
+        method: 'POST',
+        body: formData
+      })
+        .then(response => response.json())
+        .then(data => {
+          clearInterval(progressInterval);
+          updateProgress(100, 'Import complete!');
+
+          setTimeout(() => {
+            showResults(data);
+            resetForm();
+          }, 1000);
+        })
+        .catch(error => {
+          clearInterval(progressInterval);
+          console.error('Import error:', error);
+          showAlert('Import failed. Please check the console for details and try again.', 'danger');
+          resetForm();
+        });
+    }
+
+    function updateProgress(percent, text) {
+      progressBar.style.width = percent + '%';
+      progressBar.textContent = Math.round(percent) + '%';
+      progressText.textContent = text;
+    }
+
+    function showResults(data) {
+      resultsSection.classList.remove('d-none');
+
+      if (!data.success) {
+        resultsContent.innerHTML = `
+          <div class="alert alert-danger">
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            Import failed: ${data.error}
+          </div>
+        `;
+        return;
+      }
+
+      const successCount = data.imported_count || 0;
+      const totalCount = data.total_count || 0;
+      const skippedCount = data.skipped_count || 0;
+      const errors = data.errors || [];
+
+      let html = `
+        <div class="row text-center mb-4">
+          <div class="col-md-3">
+            <div class="p-3">
+              <h3 class="text-success">${successCount}</h3>
+              <small>Videos Imported</small>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="p-3">
+              <h3 class="text-info">${totalCount}</h3>
+              <small>Total Processed</small>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="p-3">
+              <h3 class="text-warning">${skippedCount}</h3>
+              <small>Skipped</small>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="p-3">
+              <h3 class="text-danger">${errors.length}</h3>
+              <small>Errors</small>
+            </div>
+          </div>
+        </div>
+      `;
+
+      if (successCount > 0) {
+        html += `
+          <div class="alert alert-success">
+            <i class="fas fa-check-circle me-2"></i>
+            Successfully imported ${successCount} videos!
+          </div>
+        `;
+      }
+
+      if (errors.length > 0) {
+        html += `
+          <div class="alert alert-warning">
+            <h6><i class="fas fa-exclamation-triangle me-2"></i>Import Issues:</h6>
+            <ul class="mb-0">
+        `;
+        errors.forEach(error => {
+          html += `<li>${error}</li>`;
+        });
+        html += `</ul></div>`;
+      }
+
+      if (data.message) {
+        html += `
+          <div class="alert alert-info">
+            <i class="fas fa-info-circle me-2"></i>
+            ${data.message}
+          </div>
+        `;
+      }
+
+      html += `
+        <div class="text-center">
+          <a href="/" class="btn btn-primary">
+            <i class="fas fa-eye me-2"></i>View Imported Videos
+          </a>
+        </div>
+      `;
+
+      resultsContent.innerHTML = html;
+    }
+
+    function resetForm() {
+      importBtn.disabled = false;
+      importBtn.innerHTML = '<i class="fas fa-upload me-2"></i>Import Videos';
+      hideFileInfo();
+    }
+
+    function showAlert(message, type) {
+      const alertHtml = `
+        <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+          ${message}
+          <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+      `;
+
+      const container = document.querySelector('.container-fluid') || document.body;
+      container.insertAdjacentHTML('afterbegin', alertHtml);
+
+      // Auto-dismiss after 5 seconds
+      setTimeout(() => {
+        const alert = container.querySelector('.alert');
+        if (alert) {
+          alert.remove();
+        }
+      }, 5000);
+    }
+
+    // Load import history on page load
+    loadImportHistory();
+  });
+
+  function loadImportHistory() {
+    const historyContainer = document.getElementById('import-history');
+
+    historyContainer.innerHTML = `
+      <div class="text-center text-muted py-4">
+        <i class="fas fa-spinner fa-spin fa-2x mb-2"></i>
+        <p>Loading import history...</p>
+      </div>
+    `;
+
+    fetch('/import-history')
+      .then(response => response.json())
+      .then(data => {
+        if (data.success && data.imports && data.imports.length > 0) {
+          let html = '<div class="table-responsive"><table class="table table-sm">';
+          html += '<thead><tr><th>Date</th><th>File</th><th>Imported</th><th>Status</th></tr></thead><tbody>';
+
+          data.imports.forEach(imp => {
+            const statusClass = imp.status === 'success' ? 'success' : 'warning';
+            html += `
+              <tr>
+                <td>${new Date(imp.date).toLocaleDateString()}</td>
+                <td><i class="fas fa-file-alt me-1"></i>${imp.filename}</td>
+                <td>
+                  <span class="badge bg-info">${imp.imported_count}</span>
+                  <small class="text-muted">/ ${imp.total_count}</small>
+                </td>
+                <td>
+                  <span class="badge bg-${statusClass}">
+                    <i class="fas fa-${statusClass === 'success' ? 'check' : 'exclamation-triangle'} me-1"></i>
+                    ${imp.status}
+                  </span>
+                </td>
+              </tr>
+            `;
+          });
+
+          html += '</tbody></table></div>';
+          historyContainer.innerHTML = html;
+        } else {
+          historyContainer.innerHTML = `
+            <div class="text-center text-muted py-4">
+              <i class="fas fa-clock fa-2x mb-2"></i>
+              <p>No recent imports found</p>
+              <small>Import some videos to see the history here</small>
+            </div>
+          `;
+        }
+      })
+      .catch(error => {
+        console.log('Failed to load import history:', error);
+        historyContainer.innerHTML = `
+          <div class="text-center text-muted py-4">
+            <i class="fas fa-exclamation-triangle fa-2x mb-2"></i>
+            <p>Failed to load import history</p>
+            <button class="btn btn-sm btn-outline-primary mt-2" onclick="loadImportHistory()">
+              <i class="fas fa-retry me-1"></i>Try Again
+            </button>
+          </div>
+        `;
+      });
+  }
+</script>
+{% endblock %}

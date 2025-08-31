@@ -1,0 +1,41 @@
+<!-- templates/video_usage_detail.html -->
+{% extends "base.html" %}
+{% block title %}{{ video.title }} - Usage Details{% endblock %}
+
+{% block content %}
+<h1 class="mb-4">Video Usage Details</h1>
+
+<div class="card shadow-sm mb-4">
+  <div class="row g-0">
+    <div class="col-md-4">
+      <img src="{{ video.thumbnail_url }}" class="img-fluid rounded-start" alt="{{ video.title }}">
+    </div>
+    <div class="col-md-8">
+      <div class="card-body">
+        <h3 class="card-title">{{ video.title }}</h3>
+        {% if parent_compilation %}
+        <p>
+          Part of:
+          <a href="{{ url_for('compilation_detail', video_id=parent_compilation.video_id) }}">
+            {{ parent_compilation.title }}
+          </a>
+        </p>
+        {% endif %}
+        <p><strong>Published:</strong> {{ video.published_at }}</p>
+        <p><strong>Duration:</strong> {{ video.duration }}</p>
+        <p><strong>Views:</strong> {{ "{:,}".format(video.view_count) }}</p>
+        <p><strong>Likes:</strong> {{ "{:,}".format(video.like_count) }}</p>
+        <p><strong>Comments:</strong> {{ "{:,}".format(video.comment_count) }}</p>
+        <p><strong>Average View Duration:</strong> {{ video.average_view_duration }} sec</p>
+        <p><strong>Average View %:</strong> {{ video.average_view_percentage }}%</p>
+        <p><strong>Retention @ 30s:</strong> {{ video.retention_30s }}%</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if description %}
+<h4>Description</h4>
+<pre class="bg-light p-3 rounded">{{ description }}</pre>
+{% endif %}
+{% endblock %}

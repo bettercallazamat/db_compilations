@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ compilation.title }} - Compilation Preview</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+  <style>
+    /* Base styles from base.html */
+    body {
+      background-color: #f8f9fa;
+    }
+
+    .navbar-brand {
+      font-weight: bold;
+      font-size: 1.5rem;
+    }
+
+    .nav-link {
+      font-weight: 500;
+      transition: all 0.3s ease;
+    }
+
+    .nav-link:hover {
+      transform: translateY(-1px);
+    }
+
+    .nav-link.active {
+      background-color: rgba(255, 255, 255, 0.1);
+      border-radius: 5px;
+    }
+
+    .main-content {
+      min-height: calc(100vh - 120px);
+      padding-top: 2rem;
+    }
+
+    .card {
+      border: none;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      transition: transform 0.3s ease;
+      border-radius: 10px;
+    }
+
+    .card:hover {
+      transform: translateY(-2px);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border: none;
+      border-radius: 25px;
+      padding: 8px 20px;
+      font-weight: 500;
+    }
+
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%);
+      transform: translateY(-1px);
+    }
+
+    .footer {
+      background-color: #343a40;
+      color: white;
+      padding: 20px 0;
+      margin-top: 3rem;
+    }
+
+    /* Compilation Preview Specific Styles */
+    .preview-hero {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border-radius: 15px;
+      padding: 2rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 4px 20px rgba(102, 126, 234, 0.3);
+    }
+
+    .stats-card {
+      background: white;
+      border-radius: 12px;
+      padding: 1.5rem;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+      border: none;
+      margin-bottom: 1.5rem;
+      transition: transform 0.3s ease;
+    }
+
+    .stats-card:hover {
+      transform: translateY(-2px);
+    }
+
+    .timestamp-card {
+      background: #f8f9fa;
+      border: 1px solid #e9ecef;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-bottom: 0.5rem;
+      transition: all 0.3s ease;
+    }
+
+    .timestamp-card:hover {
+      background: #e9ecef;
+      border-color: #667eea;
+      transform: translateX(5px);
+    }
+
+    .quality-badge {
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 0.25rem 0.5rem;
+      border-radius: 15px;
+    }
+
+    .quality-high {
+      background: #28a745;
+      color: white;
+    }
+
+    .quality-medium {
+      background: #ffc107;
+      color: #333;
+    }
+
+    .quality-low {
+      background: #dc3545;
+      color: white;
+    }
+
+    .btn-export {
+      background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);
+      border: none;
+      border-radius: 25px;
+      color: white;
+      transition: all 0.3s ease;
+      padding: 8px 20px;
+      font-weight: 500;
+    }
+
+    .btn-export:hover {
+      background: linear-gradient(135deg, #138496 0%, #0e6b73 100%);
+      color: white;
+      transform: translateY(-2px);
+    }
+
+    .analytics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    .metric-card {
+      background: white;
+      border: none;
+      border-radius: 12px;
+      padding: 1.5rem;
+      text-align: center;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      transition: transform 0.3s ease;
+    }
+
+    .metric-card:hover {
+      transform: translateY(-2px);
+    }
+
+    .metric-value {
+      font-size: 2rem;
+      font-weight: bold;
+      color: #667eea;
+      margin-bottom: 0.25rem;
+    }
+
+    .metric-label {
+      color: #6c757d;
+      font-size: 0.875rem;
+      font-weight: 500;
+    }
+
+    .status-badge {
+      font-size: 0.875rem;
+      padding: 0.375rem 0.75rem;
+      border-radius: 20px;
+      font-weight: 600;
+    }
+
+    .status-published {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+
+    .status-not_published {
+      background: #fff3cd;
+      color: #856404;
+      border: 1px solid #ffeaa7;
+    }
+
+    .status-draft {
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+
+    .video-thumbnail {
+      width: 60px;
+      height: 45px;
+      object-fit: cover;
+      border-radius: 6px;
+      border: 2px solid #e9ecef;
+    }
+
+    .retention-bar {
+      width: 100%;
+      height: 6px;
+      background-color: #e9ecef;
+      border-radius: 3px;
+      overflow: hidden;
+      margin-top: 0.5rem;
+    }
+
+    .retention-fill {
+      height: 100%;
+      transition: width 0.3s ease;
+      border-radius: 3px;
+    }
+
+    .retention-high {
+      background: linear-gradient(90deg, #28a745, #20c997);
+    }
+
+    .retention-medium {
+      background: linear-gradient(90deg, #ffc107, #fd7e14);
+    }
+
+    .retention-low {
+      background: linear-gradient(90deg, #dc3545, #e83e8c);
+    }
+
+    .loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+    }
+
+    .loading-content {
+      background: white;
+      padding: 2rem;
+      border-radius: 15px;
+      text-align: center;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    }
+
+    .spinner-border {
+      color: #667eea;
+    }
+
+    .action-buttons .btn {
+      margin-bottom: 0.5rem;
+    }
+
+    .breadcrumb {
+      background: transparent;
+      padding: 0;
+      margin-bottom: 1rem;
+    }
+
+    .breadcrumb-item a {
+      color: #667eea;
+      text-decoration: none;
+    }
+
+    .breadcrumb-item.active {
+      color: #6c757d;
+    }
+  </style>
+</head>
+
+<body>
+  <!-- Navigation -->
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <div class="container">
+      <a class="navbar-brand" href="/">
+        <i class="fas fa-video me-2"></i>DB Compilations
+      </a>
+
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+
+      <div class="collapse navbar-collapse" id="navbarNav">
+        <ul class="navbar-nav me-auto">
+          <li class="nav-item">
+            <a class="nav-link" href="/">
+              <i class="fas fa-home me-1"></i>Videos
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/create-compilation">
+              <i class="fas fa-plus-circle me-1"></i>Create
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link active" href="/user-compilations">
+              <i class="fas fa-user-edit me-1"></i>My Compilations
+            </a>
+          </li>
+        </ul>
+
+        <ul class="navbar-nav">
+          <li class="nav-item">
+            <a class="nav-link" href="/import">
+              <i class="fas fa-upload me-1"></i>Import Data
+            </a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main Content -->
+  <div class="container main-content">
+    <!-- Breadcrumb -->
+    <nav aria-label="breadcrumb">
+      <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="/"><i class="fas fa-home"></i></a></li>
+        <li class="breadcrumb-item"><a href="/user-compilations">My Compilations</a></li>
+        <li class="breadcrumb-item active">{{ compilation.title }}</li>
+      </ol>
+    </nav>
+
+    <!-- Flash messages -->
+    <div id="flash-messages"></div>
+
+    <!-- Hero Section -->
+    <div class="preview-hero">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <h1 class="display-6 mb-2">{{ compilation.title }}</h1>
+          <p class="lead mb-3">
+            <i class="fas fa-clock me-2"></i>{{ compilation.duration_rounded }} minutes
+            <span class="ms-3"><i class="fas fa-video me-2"></i>{{ compilation.video_count }} videos</span>
+          </p>
+          <span class="status-badge status-{{ compilation.status }}">
+            {% if compilation.status == 'published' %}
+            <i class="fas fa-check-circle me-1"></i>Published
+            {% elif compilation.status == 'not_published' %}
+            <i class="fas fa-clock me-1"></i>Not Published
+            {% else %}
+            <i class="fas fa-edit me-1"></i>Draft
+            {% endif %}
+          </span>
+        </div>
+        <div class="text-end">
+          <small class="opacity-75">Created {{ compilation.created_at.strftime('%B %d, %Y') }}</small>
+        </div>
+      </div>
+    </div>
+
+    <!-- Analytics Dashboard -->
+    {% if analytics %}
+    <div class="analytics-grid">
+      <div class="metric-card">
+        <div class="metric-value">{{ "%.1f"|format(analytics.avg_retention) }}%</div>
+        <div class="metric-label">Average Retention</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value">{{ "{:,}".format(analytics.total_original_views) }}</div>
+        <div class="metric-label">Total Original Views</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value">{{ analytics.quality_distribution.high }}</div>
+        <div class="metric-label">High Quality Videos</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value">{{ "%.1f"|format(analytics.max_retention) }}%</div>
+        <div class="metric-label">Highest Retention</div>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="row">
+      <!-- Compilation Details -->
+      <div class="col-lg-8">
+        <div class="stats-card">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5><i class="fas fa-list me-2"></i>Video Timeline</h5>
+            <small class="text-muted">{{ compilation.timestamps|length if compilation.timestamps else 0 }}
+              segments</small>
+          </div>
+
+          {% if compilation.timestamps %}
+          <div class="timeline-container">
+            {% for timestamp in compilation.timestamps %}
+            <div class="timestamp-card">
+              <div class="d-flex justify-content-between align-items-start">
+                <div class="flex-grow-1">
+                  <div class="d-flex align-items-center mb-2">
+                    <span class="badge bg-primary me-2">{{ timestamp.timestamp }}</span>
+                    {% if timestamp.retention_rate >= 70 %}
+                    <span class="badge quality-badge quality-high">High Quality</span>
+                    {% elif timestamp.retention_rate >= 50 %}
+                    <span class="badge quality-badge quality-medium">Medium Quality</span>
+                    {% else %}
+                    <span class="badge quality-badge quality-low">Low Quality</span>
+                    {% endif %}
+                  </div>
+                  <h6 class="mb-2">{{ timestamp.title }}</h6>
+                  <div class="small text-muted mb-2">
+                    <i class="fas fa-chart-line me-1"></i>{{ "%.1f"|format(timestamp.retention_rate) }}% retention
+                    <span class="ms-3"><i class="fas fa-clock me-1"></i>{{ (timestamp.original_duration // 60) }}:{{
+                      "%02d"|format(timestamp.original_duration % 60) }}</span>
+                  </div>
+                  <div class="retention-bar">
+                    <div
+                      class="retention-fill {% if timestamp.retention_rate >= 70 %}retention-high{% elif timestamp.retention_rate >= 50 %}retention-medium{% else %}retention-low{% endif %}"
+                      style="width: {{ timestamp.retention_rate }}%"></div>
+                  </div>
+                </div>
+                <div class="text-end ms-3">
+                  <a href="/video_detail/{{ timestamp.video_id }}" class="btn btn-outline-primary btn-sm">
+                    <i class="fas fa-external-link-alt me-1"></i>View
+                  </a>
+                </div>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <div class="text-center py-5">
+            <i class="fas fa-exclamation-triangle text-warning fa-3x mb-3"></i>
+            <h5>No Timeline Data</h5>
+            <p class="text-muted">Timeline information is not available for this compilation.</p>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Actions Sidebar -->
+      <div class="col-lg-4">
+        <div class="stats-card">
+          <h5><i class="fas fa-cog me-2"></i>Actions</h5>
+
+          <div class="action-buttons">
+            {% if compilation.status != 'published' %}
+            <button class="btn btn-success w-100" onclick="publishCompilation('{{ compilation_id }}')">
+              <i class="fas fa-upload me-2"></i>Publish Compilation
+            </button>
+            {% endif %}
+
+            <button class="btn btn-export w-100" onclick="exportCompilation('{{ compilation_id }}', 'txt')">
+              <i class="fas fa-download me-2"></i>Export as TXT
+            </button>
+
+            <button class="btn btn-export w-100" onclick="exportCompilation('{{ compilation_id }}', 'json')">
+              <i class="fas fa-file-code me-2"></i>Export as JSON
+            </button>
+
+            {% if compilation.status != 'published' %}
+            <button class="btn btn-outline-danger w-100" onclick="deleteCompilation('{{ compilation_id }}')">
+              <i class="fas fa-trash me-2"></i>Delete Compilation
+            </button>
+            {% endif %}
+          </div>
+        </div>
+
+        <!-- Compilation Stats -->
+        <div class="stats-card">
+          <h5><i class="fas fa-chart-bar me-2"></i>Statistics</h5>
+
+          <div class="row text-center">
+            <div class="col-6 mb-3">
+              <div class="h4 text-primary mb-1">{{ compilation.video_count }}</div>
+              <small class="text-muted">Videos</small>
+            </div>
+            <div class="col-6 mb-3">
+              <div class="h4 text-primary mb-1">{{ compilation.duration_rounded }}</div>
+              <small class="text-muted">Minutes</small>
+            </div>
+            {% if analytics %}
+            <div class="col-6">
+              <div class="h4 text-success mb-1">{{ analytics.quality_distribution.high }}</div>
+              <small class="text-muted">High Quality</small>
+            </div>
+            <div class="col-6">
+              <div class="h4 text-warning mb-1">{{ analytics.quality_distribution.medium }}</div>
+              <small class="text-muted">Medium Quality</small>
+            </div>
+            {% endif %}
+          </div>
+
+          {% if compilation.metadata %}
+          <div class="mt-3 pt-3 border-top">
+            <small class="text-muted">
+              <i class="fas fa-info-circle me-1"></i>
+              Algorithm v{{ compilation.metadata.creation_algorithm_version or '1.0' }}
+            </small>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Navigation -->
+    <div class="text-center mt-4">
+      <a href="/user-compilations" class="btn btn-outline-primary me-3">
+        <i class="fas fa-arrow-left me-2"></i>Back to Compilations
+      </a>
+      <a href="/create-compilation" class="btn btn-outline-secondary">
+        <i class="fas fa-plus me-2"></i>Create New
+      </a>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container">
+      <div class="row">
+        <div class="col-md-6">
+          <h6><i class="fas fa-video me-2"></i>Video Analytics Platform</h6>
+          <p class="mb-0 text-muted">Advanced video compilation management and analytics</p>
+        </div>
+        <div class="col-md-6 text-end">
+          <small class="text-muted">
+            <i class="fas fa-clock me-1"></i>Last updated: <span id="current-time"></span>
+          </small>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Loading Overlay -->
+  <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+    <div class="loading-content">
+      <div class="spinner-border mb-3" role="status">
+        <span class="visually-hidden">Loading...</span>
+      </div>
+      <p class="mb-0" id="loadingText">Processing...</p>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    // Update current time
+    document.getElementById('current-time').textContent = new Date().toISOString().slice(0, 16).replace('T', ' ');
+
+    function showFlashMessage(message, category = 'info') {
+      const flashContainer = document.getElementById('flash-messages');
+      const alertDiv = document.createElement('div');
+      alertDiv.className = `alert alert-${category === 'error' ? 'danger' : category} alert-dismissible fade show`;
+      alertDiv.innerHTML = `
+        <i class="fas fa-${category === 'error' ? 'exclamation-triangle' : 'info-circle'} me-2"></i>
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      `;
+      flashContainer.appendChild(alertDiv);
+
+      // Auto-dismiss after 5 seconds
+      setTimeout(() => {
+        const alert = bootstrap.Alert.getInstance(alertDiv);
+        if (alert) alert.close();
+      }, 5000);
+    }
+
+    function showLoading(text = 'Processing...') {
+      document.getElementById('loadingText').textContent = text;
+      document.getElementById('loadingOverlay').style.display = 'flex';
+    }
+
+    function hideLoading() {
+      document.getElementById('loadingOverlay').style.display = 'none';
+    }
+
+    function publishCompilation(compilationId) {
+      if (confirm('Are you sure you want to publish this compilation? This action cannot be undone.')) {
+        showLoading('Publishing compilation...');
+
+        fetch(`/api/compilation/${compilationId}/publish`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          }
+        })
+          .then(response => response.json())
+          .then(data => {
+            hideLoading();
+            if (data.success) {
+              showFlashMessage('Compilation published successfully!', 'success');
+              setTimeout(() => location.reload(), 1500);
+            } else {
+              showFlashMessage('Error: ' + (data.error || 'Unknown error'), 'error');
+            }
+          })
+          .catch(error => {
+            hideLoading();
+            showFlashMessage('Network error: ' + error.message, 'error');
+          });
+      }
+    }
+
+    function exportCompilation(compilationId, format) {
+      showLoading(`Exporting as ${format.toUpperCase()}...`);
+
+      fetch(`/api/compilation/${compilationId}/export`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          format: format,
+          include_analytics: true
+        })
+      })
+        .then(response => response.json())
+        .then(data => {
+          hideLoading();
+          if (data.success && data.download_url) {
+            // Create temporary download link
+            const link = document.createElement('a');
+            link.href = data.download_url;
+            link.download = data.filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            showFlashMessage(`${format.toUpperCase()} export completed successfully!`, 'success');
+          } else {
+            showFlashMessage('Export failed: ' + (data.error || 'Unknown error'), 'error');
+          }
+        })
+        .catch(error => {
+          hideLoading();
+          showFlashMessage('Export failed: ' + error.message, 'error');
+        });
+    }
+
+    function deleteCompilation(compilationId) {
+      if (confirm('Are you sure you want to delete this compilation? This action cannot be undone.')) {
+        showLoading('Deleting compilation...');
+
+        fetch(`/api/compilation/${compilationId}/delete`, {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+          }
+        })
+          .then(response => response.json())
+          .then(data => {
+            hideLoading();
+            if (data.success) {
+              showFlashMessage('Compilation deleted successfully!', 'success');
+              setTimeout(() => window.location.href = '/user-compilations', 1500);
+            } else {
+              showFlashMessage('Error: ' + (data.error || 'Unknown error'), 'error');
+            }
+          })
+          .catch(error => {
+            hideLoading();
+            showFlashMessage('Network error: ' + error.message, 'error');
+          });
+      }
+    }
+
+    // Initialize tooltips
+    document.addEventListener('DOMContentLoaded', function () {
+      const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+      tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+      });
+    });
+  </script>
+</body>
+
+</html>

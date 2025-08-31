@@ -1,0 +1,560 @@
+{% extends "base.html" %}
+
+{% block title %}{{ video.title|default('Video Details') }} - Video Analytics{% endblock %}
+
+{% block extra_css %}
+<style>
+  .video-hero {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 15px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+  }
+
+  .video-thumbnail-large {
+    width: 100%;
+    max-width: 300px;
+    height: 200px;
+    object-fit: cover;
+    border-radius: 10px;
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+  }
+
+  .stat-card {
+    background: white;
+    border-radius: 10px;
+    padding: 1.5rem;
+    text-align: center;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    height: 100%;
+    transition: transform 0.3s ease;
+  }
+
+  .stat-card:hover {
+    transform: translateY(-3px);
+  }
+
+  .stat-number {
+    font-size: 2rem;
+    font-weight: bold;
+    margin-bottom: 0.5rem;
+  }
+
+  .stat-label {
+    color: #6c757d;
+    font-size: 0.875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .progress-custom {
+    height: 20px;
+    border-radius: 10px;
+    background-color: #f8f9fa;
+  }
+
+  .progress-bar-custom {
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 0.875rem;
+  }
+
+  .info-section {
+    background: white;
+    border-radius: 10px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  }
+
+  .section-title {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: 1.5rem;
+    color: #495057;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .tag-item {
+    display: inline-block;
+    background: #e9ecef;
+    color: #495057;
+    padding: 0.375rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.875rem;
+    margin: 0.25rem;
+  }
+
+  .timestamp-item {
+    background: #f8f9fa;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+    border-left: 4px solid #667eea;
+  }
+
+  .timestamp-time {
+    font-weight: 600;
+    color: #667eea;
+    font-family: monospace;
+  }
+
+  .usage-stat {
+    background: linear-gradient(45deg, #f8f9fa, #e9ecef);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .btn-action {
+    border-radius: 25px;
+    padding: 0.5rem 1.5rem;
+    font-weight: 500;
+    margin: 0.25rem;
+  }
+
+  .video-id-display {
+    font-family: monospace;
+    background: rgba(255, 255, 255, 0.2);
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    display: inline-block;
+  }
+
+  .description-box {
+    background: #f8f9fa;
+    border-radius: 8px;
+    padding: 1.5rem;
+    border: 1px solid #e9ecef;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .back-button {
+    position: fixed;
+    top: 100px;
+    left: 20px;
+    z-index: 1000;
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+  }
+
+  @media (max-width: 768px) {
+    .back-button {
+      position: relative;
+      top: auto;
+      left: auto;
+      margin-bottom: 1rem;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Back Button -->
+<a href="javascript:history.back()" class="btn btn-primary back-button" data-bs-toggle="tooltip" title="Go Back">
+  <i class="fas fa-arrow-left"></i>
+</a>
+
+{% if video %}
+<!-- Video Hero Section -->
+<div class="video-hero">
+  <div class="row align-items-center">
+    <div class="col-md-8">
+      <h1 class="display-6 mb-3">{{ video.title }}</h1>
+      <div class="video-id-display mb-3">
+        <i class="fas fa-fingerprint me-2"></i>{{ video.video_id }}
+      </div>
+      <div class="d-flex flex-wrap align-items-center gap-3">
+        {% if video.is_compilation %}
+        <span class="badge bg-success fs-6">
+          <i class="fas fa-layer-group me-1"></i>Compilation
+        </span>
+        {% endif %}
+        {% if video.actor %}
+        <span class="badge bg-info fs-6">
+          <i class="fas fa-user me-1"></i>Actor Video
+        </span>
+        {% endif %}
+        <span class="badge bg-light text-dark fs-6">
+          <i class="fas fa-calendar me-1"></i>{{ video.published_at|default('Unknown Date') }}
+        </span>
+      </div>
+    </div>
+    <div class="col-md-4 text-center">
+      {% if video.thumbnail_url %}
+      <img src="{{ video.thumbnail_url }}" alt="{{ video.title }}" class="video-thumbnail-large">
+      {% else %}
+      <div class="video-thumbnail-large d-flex align-items-center justify-content-center bg-light text-muted">
+        <i class="fas fa-video fa-3x"></i>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Statistics Cards -->
+<div class="row mb-4">
+  <div class="col-lg-3 col-md-6 mb-3">
+    <div class="stat-card">
+      <div class="stat-number text-primary">
+        <i class="fas fa-eye"></i> {{ "{:,}".format(video.view_count|default(0)) }}
+      </div>
+      <div class="stat-label">Total Views</div>
+    </div>
+  </div>
+  <div class="col-lg-3 col-md-6 mb-3">
+    <div class="stat-card">
+      <div class="stat-number text-success">
+        <i class="fas fa-thumbs-up"></i> {{ "{:,}".format(video.like_count|default(0)) }}
+      </div>
+      <div class="stat-label">Likes</div>
+    </div>
+  </div>
+  <div class="col-lg-3 col-md-6 mb-3">
+    <div class="stat-card">
+      <div class="stat-number text-info">
+        <i class="fas fa-comments"></i> {{ "{:,}".format(video.comment_count|default(0)) }}
+      </div>
+      <div class="stat-label">Comments</div>
+    </div>
+  </div>
+  <div class="col-lg-3 col-md-6 mb-3">
+    <div class="stat-card">
+      <div class="stat-number text-warning">
+        <i class="fas fa-clock"></i>
+        {% if video.duration_seconds %}
+        {% set minutes = (video.duration_seconds // 60)|int %}
+        {% set seconds = (video.duration_seconds % 60)|int %}
+        {{ minutes }}:{{ "{:02d}".format(seconds) }}
+        {% else %}
+        {{ video.duration|default('N/A') }}
+        {% endif %}
+      </div>
+      <div class="stat-label">Duration</div>
+    </div>
+  </div>
+</div>
+
+<!-- Performance Metrics -->
+<div class="info-section">
+  <h3 class="section-title">
+    <i class="fas fa-chart-line"></i>Performance Metrics
+  </h3>
+
+  <div class="row">
+    <!-- Retention Rate -->
+    <div class="col-md-6 mb-4">
+      <h5 class="mb-3">Average View Percentage</h5>
+      {% set retention = video.average_view_percentage|default(0) %}
+      <div class="progress progress-custom mb-2">
+        <div class="progress-bar progress-bar-custom 
+                    {% if retention >= 70 %}bg-success
+                    {% elif retention >= 50 %}bg-warning
+                    {% else %}bg-danger{% endif %}" role="progressbar" style="width: {{ retention }}%">
+          {{ retention|round(1) }}%
+        </div>
+      </div>
+      <small class="text-muted">
+        {% if retention >= 70 %}
+        <i class="fas fa-check-circle text-success"></i> Excellent retention
+        {% elif retention >= 50 %}
+        <i class="fas fa-exclamation-circle text-warning"></i> Good retention
+        {% else %}
+        <i class="fas fa-times-circle text-danger"></i> Low retention
+        {% endif %}
+      </small>
+    </div>
+
+    <!-- 30-Second Retention -->
+    <div class="col-md-6 mb-4">
+      <h5 class="mb-3">30-Second Retention</h5>
+      {% set retention_30s = video.retention_30s|default(0) %}
+      <div class="progress progress-custom mb-2">
+        <div class="progress-bar progress-bar-custom bg-info" role="progressbar" style="width: {{ retention_30s }}%">
+          {{ retention_30s|round(1) }}%
+        </div>
+      </div>
+      <small class="text-muted">
+        Viewers who stayed past 30 seconds
+      </small>
+    </div>
+  </div>
+
+  <div class="row">
+    <!-- Average View Duration -->
+    <div class="col-md-4 mb-3">
+      <div class="usage-stat text-center">
+        <h6 class="mb-2">Average View Duration</h6>
+        <div class="h4 text-primary">
+          {% if video.average_view_duration %}
+          {% set avg_minutes = (video.average_view_duration // 60)|int %}
+          {% set avg_seconds = (video.average_view_duration % 60)|int %}
+          {{ avg_minutes }}:{{ "{:02d}".format(avg_seconds) }}
+          {% else %}
+          N/A
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Estimated Minutes Watched -->
+    <div class="col-md-4 mb-3">
+      <div class="usage-stat text-center">
+        <h6 class="mb-2">Total Minutes Watched</h6>
+        <div class="h4 text-success">
+          {{ "{:,}".format(video.estimated_minutes_watched|default(0)) }}
+        </div>
+      </div>
+    </div>
+
+    <!-- Engagement Rate -->
+    <div class="col-md-4 mb-3">
+      <div class="usage-stat text-center">
+        <h6 class="mb-2">Engagement Rate</h6>
+        <div class="h4 text-info">
+          {% if video.view_count and video.view_count > 0 %}
+          {% set engagement = ((video.like_count|default(0) + video.comment_count|default(0)) / video.view_count * 100)
+          %}
+          {{ engagement|round(2) }}%
+          {% else %}
+          0%
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Video Description -->
+{% if video.description %}
+<div class="info-section">
+  <h3 class="section-title">
+    <i class="fas fa-align-left"></i>Description
+  </h3>
+  <div class="description-box">
+    {{ video.description|replace('\n', '<br>')|safe }}
+  </div>
+</div>
+{% endif %}
+
+<!-- Compilation Details -->
+{% if video.is_compilation and compilation_data %}
+<div class="info-section">
+  <h3 class="section-title">
+    <i class="fas fa-layer-group"></i>Compilation Breakdown
+  </h3>
+
+  <div class="row mb-3">
+    <div class="col-md-4">
+      <div class="usage-stat text-center">
+        <h6>Total Segments</h6>
+        <div class="h4 text-primary">{{ compilation_data.timestamps|length if compilation_data.timestamps else 0 }}
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="usage-stat text-center">
+        <h6>Rounded Duration</h6>
+        <div class="h4 text-info">{{ compilation_data.duration_rounded|default('N/A') }} min</div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="usage-stat text-center">
+        <h6>Compilation Type</h6>
+        <div class="h4 text-success">Auto-Generated</div>
+      </div>
+    </div>
+  </div>
+
+  {% if compilation_data.timestamps %}
+  <h5 class="mb-3">Timestamps</h5>
+  <div class="row">
+    {% for timestamp in compilation_data.timestamps %}
+    <div class="col-md-6 mb-2">
+      <div class="timestamp-item">
+        <div class="d-flex justify-content-between align-items-start">
+          <div>
+            <span class="timestamp-time">{{ timestamp.start_time }}</span>
+            <h6 class="mb-1 mt-1">{{ timestamp.title }}</h6>
+            {% if timestamp.video_id %}
+            <small class="text-muted">
+              <i class="fas fa-link me-1"></i>{{ timestamp.video_id }}
+            </small>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- Usage Statistics -->
+{% if video.user_compilation_usage or video.compilation_usage_stats %}
+<div class="info-section">
+  <h3 class="section-title">
+    <i class="fas fa-chart-bar"></i>Usage Statistics
+  </h3>
+
+  <div class="row">
+    {% if video.user_compilation_usage %}
+    <div class="col-md-6">
+      <h5 class="mb-3">User Compilation Usage</h5>
+
+      <div class="usage-stat">
+        <div class="row text-center">
+          <div class="col-6">
+            <h6>Total Inclusions</h6>
+            <div class="h5 text-primary">{{ video.user_compilation_usage.total_inclusions|default(0) }}</div>
+          </div>
+          <div class="col-6">
+            <h6>First Video Count</h6>
+            <div class="h5 text-success">{{ video.user_compilation_usage.first_video_count|default(0) }}</div>
+          </div>
+        </div>
+      </div>
+
+      {% if video.user_compilation_usage.last_used %}
+      <p class="mb-2">
+        <i class="fas fa-clock me-2"></i>
+        <strong>Last Used:</strong> {{ video.user_compilation_usage.last_used.strftime('%Y-%m-%d %H:%M') if
+        video.user_compilation_usage.last_used else 'Never' }}
+      </p>
+      {% endif %}
+
+      {% if video.user_compilation_usage.usage_by_duration %}
+      <h6 class="mb-2">Usage by Duration:</h6>
+      {% for duration, count in video.user_compilation_usage.usage_by_duration.items() %}
+      <span class="badge bg-secondary me-1 mb-1">{{ duration }}: {{ count }}x</span>
+      {% endfor %}
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if video.compilation_usage_stats %}
+    <div class="col-md-6">
+      <h5 class="mb-3">Auto-Compilation Usage</h5>
+      {% for stat_key, stat_value in video.compilation_usage_stats.items() %}
+      <div class="usage-stat">
+        <strong>{{ stat_key|title|replace('_', ' ') }}:</strong> {{ stat_value }}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<!-- Tags -->
+{% if video.tags and video.tags|length > 0 %}
+<div class="info-section">
+  <h3 class="section-title">
+    <i class="fas fa-tags"></i>Tags
+  </h3>
+  <div class="mb-3">
+    {% for tag in video.tags %}
+    <span class="tag-item">
+      <i class="fas fa-tag me-1"></i>{{ tag }}
+    </span>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- Action Buttons -->
+<div class="info-section">
+
+  <div class="text-center">
+
+    {% if video.is_compilation %}
+    <a href="/compilation_detail/{{ video.video_id }}" class="btn btn-info btn-action">
+      <i class="fas fa-layer-group me-2"></i>Compilation Details
+    </a>
+    {% endif %}
+
+    <a href="/video_usage_detail/{{ video.video_id }}" class="btn btn-success btn-action">
+      <i class="fas fa-chart-line me-2"></i>Usage Analytics
+    </a></br></br>
+
+    <a href="/" class="btn btn-outline-secondary btn-action">
+      <i class="fas fa-arrow-left me-2"></i>Back to List
+    </a>
+  </div>
+</div>
+
+{% else %}
+<!-- Video Not Found -->
+<div class="text-center py-5">
+  <div class="mb-4">
+    <i class="fas fa-exclamation-triangle fa-4x text-muted"></i>
+  </div>
+  <h2 class="text-muted mb-3">Video Not Found</h2>
+  <p class="text-muted mb-4">The requested video could not be found in the database.</p>
+  <a href="/" class="btn btn-primary">
+    <i class="fas fa-arrow-left me-2"></i>Back to Videos
+  </a>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    // Initialize all tooltips
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tooltipTriggerList.map(function (tooltipTriggerEl) {
+      return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+
+    // Add click-to-copy functionality for video ID
+    const videoId = document.querySelector('.video-id-display');
+    if (videoId) {
+      videoId.style.cursor = 'pointer';
+      videoId.addEventListener('click', function () {
+        const text = this.textContent.replace('🔍', '').trim();
+        navigator.clipboard.writeText(text).then(function () {
+          // Show temporary success message
+          const original = videoId.innerHTML;
+          videoId.innerHTML = '<i class="fas fa-check me-2"></i>Copied!';
+          videoId.style.background = 'rgba(40, 167, 69, 0.3)';
+
+          setTimeout(function () {
+            videoId.innerHTML = original;
+            videoId.style.background = 'rgba(255, 255, 255, 0.2)';
+          }, 2000);
+        });
+      });
+
+      // Add tooltip
+      videoId.setAttribute('data-bs-toggle', 'tooltip');
+      videoId.setAttribute('title', 'Click to copy video ID');
+      new bootstrap.Tooltip(videoId);
+    }
+
+    // Smooth scroll for internal links
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function (e) {
+        e.preventDefault();
+        const target = document.querySelector(this.getAttribute('href'));
+        if (target) {
+          target.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start'
+          });
+        }
+      });
+    });
+  });
+</script>
+{% endblock %}
