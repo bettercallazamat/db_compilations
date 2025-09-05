@@ -27,6 +27,17 @@ class VideoAnalyticsUtils:
         print("\n📹 Processing all compilations...")
         processing_results = self.compilation_manager.process_all_compilations()
 
+        print(f"   ✅ Processing completed:")
+        print(f"     - Videos processed: {processing_results['processed']}")
+        print(f"     - New compilations: {processing_results['new_compilations']}")
+        print(
+            f"     - Updated compilations: {processing_results['updated_compilations']}")
+        if processing_results['errors']:
+            print(
+                f"     - Errors encountered: {len(processing_results['errors'])}")
+            for error in processing_results['errors'][:3]:  # Show first 3 errors
+                print(f"       • {error}")
+
         compilation_keywords = {}
         potential_compilations = []
 

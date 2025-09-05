@@ -8,6 +8,7 @@ import json
 import logging
 from datetime import datetime, timedelta
 import os
+import re
 
 # Import our enhanced modules
 from compilation_manager import CompilationManager
@@ -407,7 +408,7 @@ def compilation_detail(video_id):
 
             # Debug
             print(f"Processing {len(compilation['timestamps'])} timestamps")
-            print(f"TEST FIELD: {compilation['timestamps']}")
+
             for timestamp in compilation['timestamps']:
                 if timestamp.get('title'):
                     # Debug
@@ -418,19 +419,15 @@ def compilation_detail(video_id):
                         'title': timestamp['title']
                     })
 
-
-                    # If still not found, try searching in title or other fields
+                    # If still not found, try different search strategies
                     if not segment_video:
+                        # Escape special regex characters
+                        escaped_title = re.escape(timestamp['title'])
+
+                        # Try regex search with escaped title
                         segment_video = videos_collection.find_one({
                             '$and': [
-                                {
-                                    '$or': [
-                                        {'title': {
-                                            '$regex': timestamp['title'], '$options': 'i'}},
-                                        {'title': {
-                                            '$regex': timestamp['title'], '$options': 'i'}}
-                                    ]
-                                },
+                                {'title': {'$regex': escaped_title, '$options': 'i'}},
                                 {
                                     '$or': [
                                         {'is_compilation': {'$exists': False}},
@@ -440,15 +437,51 @@ def compilation_detail(video_id):
                             ]
                         })
 
+                        # If still not found, try partial match
+                        if not segment_video:
+                            # Split title into words and search for any containing these words
+                            title_words = timestamp['title'].split()
+                            if title_words:
+                                word_regexes = [re.escape(word) for word in title_words if len(
+                                    word) > 2]  # Skip very short words
+                                if word_regexes:
+                                    segment_video = videos_collection.find_one({
+                                        '$and': [
+                                            {
+                                                '$or': [
+                                                    {'title': {'$regex': '|'.join(
+                                                        word_regexes), '$options': 'i'}},
+                                                    {'description': {'$regex': '|'.join(
+                                                        word_regexes), '$options': 'i'}}
+                                                ]
+                                            },
+                                            {
+                                                '$or': [
+                                                    {'is_compilation': {
+                                                        '$exists': False}},
+                                                    {'is_compilation': False}
+                                                ]
+                                            }
+                                        ]
+                                    })
+
+                        # If still not found, try without compilation filter
+                        if not segment_video:
+                            segment_video = videos_collection.find_one({
+                                'title': {'$regex': escaped_title, '$options': 'i'}
+                            })
+
+                    print(
+                        f"================ SEARCH RESULT: {segment_video} ================")
+
                     if segment_video:
-                        # print(f"FOUND: {segment_videos}")
-                        segment_videos[segment_video['video_id']] = segment_video
+                        segment_videos[segment_video['video_id']
+                                       ] = segment_video
                         # Debug
                         print(f"Found video: {segment_video['title']}")
 
                         # Analyze quality
-                        retention = segment_video.get(
-                            'retention_30s', 0)
+                        retention = segment_video.get('retention_30s', 0)
                         retention_rates.append(retention)
                         total_views += segment_video.get('view_count', 0)
 
@@ -459,8 +492,17 @@ def compilation_detail(video_id):
                         else:
                             segment_analysis['quality_distribution']['low'] += 1
                     else:
-                        # Debug
-                        print(f"Video not found: {timestamp['video_id']}")
+                        # Debug - show what we're looking for vs what's available
+                        print(f"Video not found: {timestamp['title']}")
+
+                        # Additional debugging: show similar titles
+                        similar_videos = videos_collection.find({
+                            'title': {'$regex': re.escape(timestamp['title'][:10]), '$options': 'i'}
+                        }).limit(3)
+
+                        print("Similar titles found:")
+                        for similar in similar_videos:
+                            print(f"  - {similar.get('title', 'No title')}")
 
             # Calculate averages
             if retention_rates:

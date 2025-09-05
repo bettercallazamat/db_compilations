@@ -69,8 +69,10 @@ class CompilationParser:
     def extract_compilation_data(video_doc: dict) -> Optional[dict]:
         """Extract compilation data from video document"""
         description = video_doc.get('description', '')
+        title = video_doc.get('title', '')
+        # print(f" VIDEO DOC: {video_doc}")
 
-        if not CompilationParser.is_compilation(description):
+        if not CompilationParser.is_compilation(title):
             return None
 
         timestamps = CompilationParser.parse_timestamps(description)
