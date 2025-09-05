@@ -37,6 +37,7 @@ class CompilationCreator:
         self.MAX_ANNUAL_USAGE = 10
         # Maximum duration for individual videos in compilations (in seconds)
         self.MAX_VIDEO_DURATION_SECONDS = 300  # 5 minutes
+        self.MIN_VIDEO_DURATION_SECONDS = 60   # 1 minute
         self.RETENTION_WEIGHT = 0.6  # Weight factor for retention rate in scoring algorithm
         self.VIEW_COUNT_WEIGHT = 0.1  # Weight factor for view count in scoring algorithm
         self.FRESHNESS_WEIGHT = 0.1  # Weight factor for video freshness in scoring algorithm
@@ -79,28 +80,46 @@ class CompilationCreator:
         Returns:
             Dict mapping video categories to sorted lists of videos
         """
-        # Filter videos based on criteria
+        
+        # Add these counters at the beginning
+        filter_stats = {
+            'total_videos': len(videos),
+            'filtered_compilation_flag': 0,
+            'filtered_title_keywords': 0,
+            'filtered_exists_in_compilations': 0,
+            'filtered_duration': 0,
+            'filtered_date': 0,
+            'filtered_usage_limit': 0,
+            'filtered_missing_metrics': 0,
+            'passed_all_filters': 0
+        }
+
         filtered_videos = []
         current_date = datetime.utcnow()
-        one_year_ago = current_date - timedelta(days=365)
 
         for video in videos:
             # Skip compilation videos - multiple checks for robustness
             if video.get('is_compilation', False):
+                filter_stats['filtered_compilation_flag'] += 1
                 continue
 
             # Additional compilation detection methods
-            video_title = video.get('title', '').lower()
-            if any(keyword in video_title for keyword in ['compilation', 'best of', 'highlights', 'collection', "more", 'songs']):
-                continue
+            # video_title = video.get('title', '').lower()
+            # if any(keyword in video_title for keyword in ['compilation', 'best of', 'highlights', 'collection', "more", 'songs']):
+            #     filter_stats['filtered_title_keywords'] += 1
+            #     continue
 
             # Check if video_id exists in compilations collection (extra safety)
             if self.compilations_collection.find_one({'video_ids': video.get('video_id')}):
+                filter_stats['filtered_exists_in_compilations'] += 1
                 continue
 
-            # Skip videos longer than 10 minutes
+            # Check video duration constraints (1-5 minutes)
             video_duration = video.get('duration_seconds', 0)
-            if video_duration > self.MAX_VIDEO_DURATION_SECONDS or video_duration ==0:
+            if (video_duration > self.MAX_VIDEO_DURATION_SECONDS or
+                video_duration < self.MIN_VIDEO_DURATION_SECONDS or
+                    video_duration == 0):
+                filter_stats['filtered_duration'] += 1
                 continue
 
             # Apply date filter if specified
@@ -110,22 +129,31 @@ class CompilationCreator:
                         video.get('published_at', ''), '%Y-%m-%d')
                     filter_date = datetime.strptime(from_date, '%Y-%m-%d')
                     if video_date < filter_date:
+                        filter_stats['filtered_date'] += 1
                         continue
                 except (ValueError, TypeError):
-                    # Skip videos with invalid dates
+                    filter_stats['filtered_date'] += 1
                     continue
 
             # Check annual usage limit
             usage_stats = video.get('compilation_usage_stats', {})
             total_usage = usage_stats.get('total_inclusions', 0)
             if total_usage >= self.MAX_ANNUAL_USAGE:
+                filter_stats['filtered_usage_limit'] += 1
                 continue
 
             # Ensure video has required metrics
             if not all(key in video for key in ['retention_30s', 'view_count']):
+                filter_stats['filtered_missing_metrics'] += 1
                 continue
 
+            filter_stats['passed_all_filters'] += 1
             filtered_videos.append(video)
+
+        # Print the debugging info
+        print("VIDEO FILTERING STATS:")
+        for key, value in filter_stats.items():
+            print(f"  {key}: {value}")
 
         if not filtered_videos:
             return {category: [] for category in VideoCategory}
@@ -211,7 +239,7 @@ class CompilationCreator:
             # Additional filter: ensure videos are within duration limit
             valid_candidates = [
                 v for v in candidates
-                if v.get('duration_seconds', 0) <= self.MAX_VIDEO_DURATION_SECONDS
+                if (self.MIN_VIDEO_DURATION_SECONDS <= v.get('duration_seconds', 0) <= self.MAX_VIDEO_DURATION_SECONDS)
             ]
 
             if not valid_candidates:
@@ -300,9 +328,9 @@ class CompilationCreator:
 
         # Prioritize higher quality videos but include variety
         category_weights = {
-            VideoCategory.TOP_25_PERCENT: 0.4,      # 40% from top tier
+            VideoCategory.TOP_25_PERCENT: 0.35,      # 40% from top tier
             VideoCategory.SECOND_25_PERCENT: 0.35,  # 35% from second tier
-            VideoCategory.THIRD_25_PERCENT: 0.20,   # 20% from third tier
+            VideoCategory.THIRD_25_PERCENT: 0.25,   # 20% from third tier
             VideoCategory.BOTTOM_25_PERCENT: 0.05   # 5% from bottom tier
         }
 
@@ -739,3 +767,35 @@ class CompilationCreator:
             comp['_id'] = str(comp['_id'])
 
         return compilations
+
+
+    def debug_video_counts(self):
+        """Debug method to see video distribution"""
+        all_videos = list(self.videos_collection.find({}))
+
+        duration_ranges = {
+            'under_1_min': 0,
+            '1_to_5_min': 0,
+            '5_to_10_min': 0,
+            'over_10_min': 0,
+            'no_duration': 0
+        }
+
+        for video in all_videos:
+            duration = video.get('duration_seconds', 0)
+            if duration == 0:
+                duration_ranges['no_duration'] += 1
+            elif duration < 60:
+                duration_ranges['under_1_min'] += 1
+            elif duration <= 300:
+                duration_ranges['1_to_5_min'] += 1
+            elif duration <= 600:
+                duration_ranges['5_to_10_min'] += 1
+            else:
+                duration_ranges['over_10_min'] += 1
+
+        print("VIDEO DURATION DISTRIBUTION:")
+        for range_name, count in duration_ranges.items():
+            print(f"  {range_name}: {count}")
+
+        return duration_ranges
