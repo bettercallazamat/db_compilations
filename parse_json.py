@@ -471,9 +471,6 @@ def compilation_detail(video_id):
                                 'title': {'$regex': escaped_title, '$options': 'i'}
                             })
 
-                    print(
-                        f"================ SEARCH RESULT: {segment_video} ================")
-
                     if segment_video:
                         segment_videos[segment_video['video_id']
                                        ] = segment_video
