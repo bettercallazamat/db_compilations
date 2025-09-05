@@ -24,6 +24,9 @@ class VideoAnalyticsUtils:
         """Analyze all video descriptions to find compilation keywords"""
         print("🔍 Analyzing compilation keywords in video descriptions...")
 
+        print("\n📹 Processing all compilations...")
+        processing_results = self.compilation_manager.process_all_compilations()
+
         compilation_keywords = {}
         potential_compilations = []
 

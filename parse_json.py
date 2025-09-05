@@ -149,6 +149,18 @@ class VideoManager:
                     videos_collection.insert_one(video_doc)
                     imported_count += 1
 
+                    processing_results = compilation_manager.process_all_compilations()
+                    print(f"   ✅ Processing completed:")
+                    print(f"     - Videos processed: {processing_results['processed']}")
+                    print(f"     - New compilations: {processing_results['new_compilations']}")
+                    print(
+                        f"     - Updated compilations: {processing_results['updated_compilations']}")
+                    if processing_results['errors']:
+                        print(
+                            f"     - Errors encountered: {len(processing_results['errors'])}")
+                        for error in processing_results['errors'][:3]:  # Show first 3 errors
+                            print(f"       • {error}")
+
                 except Exception as video_error:
                     errors.append(f'Video {i+1}: {str(video_error)}')
                     continue
