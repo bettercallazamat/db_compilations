@@ -100,8 +100,10 @@ class CompilationParser:
 class VideoUsageTracker:
     """Track video usage statistics in compilations"""
 
-    def __init__(self, compilations_collection, videos_collection):
-        self.compilations_collection = compilations_collection
+    def __init__(self, compilations_collection, user_compilations_collection, videos_collection):
+        self.compilations_collection = compilations_collection  # Auto-generated compilations
+        # User-created compilations
+        self.user_compilations_collection = user_compilations_collection
         self.videos_collection = videos_collection
 
     def update_video_usage_stats(self, video_id: str = None):
@@ -120,7 +122,7 @@ class VideoUsageTracker:
         if not video:
             return
 
-        stats = self._calculate_video_stats(video['title'])
+        stats = self._calculate_video_stats(video_id)
 
         self.videos_collection.update_one(
             {'video_id': video_id},
@@ -137,7 +139,7 @@ class VideoUsageTracker:
         videos = self.videos_collection.find({})
 
         for video in videos:
-            stats = self._calculate_video_stats(video['title'])
+            stats = self._calculate_video_stats(video.get('video_id'))
 
             self.videos_collection.update_one(
                 {'_id': video['_id']},
@@ -149,60 +151,121 @@ class VideoUsageTracker:
                 }
             )
 
-    def _calculate_video_stats(self, video_title: str) -> dict:
-        """Calculate usage statistics for a video based on its title"""
-        # Get current date for filtering last year
+    def _calculate_video_stats(self, video_id: str) -> dict:
+        """Calculate usage statistics for a video"""
+        if not video_id:
+            return {
+                'total_inclusions': 0,
+                'first_video_count': 0,
+                'usage_by_duration': {},
+                'first_video_by_duration': {},
+                'auto_compilation_usage': 0,
+                'user_compilation_usage': 0
+            }
+
         one_year_ago = datetime.utcnow() - timedelta(days=365)
 
-        # Find compilations that include this video
-        compilations = list(self.compilations_collection.find({
-            'timestamps.title': {'$regex': re.escape(video_title), '$options': 'i'},
+        # Query auto-generated compilations (from JSON imports)
+        auto_compilations = list(self.compilations_collection.find({
+            'timestamps.video_id': video_id,
             'created_at': {'$gte': one_year_ago}
         }))
 
+        # Query user-created compilations (from compilation creator)
+        user_compilations = list(self.user_compilations_collection.find({
+            'timestamps.video_id': video_id,
+            'created_at': {'$gte': one_year_ago}
+        }))
+
+        # Initialize stats structure
         stats = {
             'total_inclusions': 0,
             'first_video_count': 0,
             'usage_by_duration': {},
-            'first_video_by_duration': {}
+            'first_video_by_duration': {},
+            'auto_compilation_usage': 0,
+            'user_compilation_usage': 0,
+            # Separate tracking for each type
+            'auto_compilation_details': {
+                'total_inclusions': 0,
+                'first_video_count': 0,
+                'usage_by_duration': {},
+                'first_video_by_duration': {}
+            },
+            'user_compilation_details': {
+                'total_inclusions': 0,
+                'first_video_count': 0,
+                'usage_by_duration': {},
+                'first_video_by_duration': {}
+            }
         }
 
-        for compilation in compilations:
-            duration_rounded = compilation['duration_rounded']
-            duration_key = f"{duration_rounded}min"
+        # Process auto-generated compilations
+        stats['auto_compilation_usage'] = len(auto_compilations)
+        for compilation in auto_compilations:
+            self._process_compilation_for_stats(
+                compilation, video_id, stats['auto_compilation_details'])
 
-            # Initialize counters for this duration if not exists
-            if duration_key not in stats['usage_by_duration']:
-                stats['usage_by_duration'][duration_key] = 0
-            if duration_key not in stats['first_video_by_duration']:
-                stats['first_video_by_duration'][duration_key] = 0
+        # Process user-created compilations
+        stats['user_compilation_usage'] = len(user_compilations)
+        for compilation in user_compilations:
+            self._process_compilation_for_stats(
+                compilation, video_id, stats['user_compilation_details'])
 
-            # Check each timestamp in the compilation
-            timestamps = compilation.get('timestamps', [])
-            for i, timestamp_entry in enumerate(timestamps):
-                if self._titles_match(video_title, timestamp_entry['title']):
-                    stats['total_inclusions'] += 1
-                    stats['usage_by_duration'][duration_key] += 1
+        # Combine totals
+        stats['total_inclusions'] = (stats['auto_compilation_details']['total_inclusions'] +
+                                     stats['user_compilation_details']['total_inclusions'])
 
-                    # Check if this is the first video (index 0)
-                    if i == 0:
-                        stats['first_video_count'] += 1
-                        stats['first_video_by_duration'][duration_key] += 1
-                    break  # Don't count the same video multiple times in one compilation
+        stats['first_video_count'] = (stats['auto_compilation_details']['first_video_count'] +
+                                      stats['user_compilation_details']['first_video_count'])
+
+        # Merge duration dictionaries
+        stats['usage_by_duration'] = self._merge_duration_dicts(
+            stats['auto_compilation_details']['usage_by_duration'],
+            stats['user_compilation_details']['usage_by_duration']
+        )
+
+        stats['first_video_by_duration'] = self._merge_duration_dicts(
+            stats['auto_compilation_details']['first_video_by_duration'],
+            stats['user_compilation_details']['first_video_by_duration']
+        )
 
         return stats
 
-    def _titles_match(self, video_title: str, compilation_title: str) -> bool:
-        """Check if two titles match (case-insensitive, fuzzy matching)"""
-        # Simple fuzzy matching - you can make this more sophisticated
-        video_title_clean = re.sub(r'[^\w\s]', '', video_title.lower())
-        compilation_title_clean = re.sub(
-            r'[^\w\s]', '', compilation_title.lower())
+    def _process_compilation_for_stats(self, compilation: dict, video_id: str, stats_section: dict):
+        """Process a single compilation and update the provided stats section"""
+        duration_rounded = compilation.get('duration_rounded', 0)
+        duration_key = f"{duration_rounded}min"
 
-        # Check if titles are very similar (you can adjust the threshold)
-        return (video_title_clean in compilation_title_clean or
-                compilation_title_clean in video_title_clean or
-                video_title_clean == compilation_title_clean)
+        # Initialize duration keys if not present
+        if duration_key not in stats_section['usage_by_duration']:
+            stats_section['usage_by_duration'][duration_key] = 0
+        if duration_key not in stats_section['first_video_by_duration']:
+            stats_section['first_video_by_duration'][duration_key] = 0
+
+        timestamps = compilation.get('timestamps', [])
+
+        # Check each timestamp entry in the compilation
+        for i, timestamp_entry in enumerate(timestamps):
+            # Match video_id exactly
+            if timestamp_entry.get('video_id') == video_id:
+                stats_section['total_inclusions'] += 1
+                stats_section['usage_by_duration'][duration_key] += 1
+
+                # Check if this is the first video in the compilation
+                if i == 0:
+                    stats_section['first_video_count'] += 1
+                    stats_section['first_video_by_duration'][duration_key] += 1
+
+                # Break after first match to avoid double counting
+                break
+
+    def _merge_duration_dicts(self, dict1: dict, dict2: dict) -> dict:
+        """Merge two duration dictionaries by adding values"""
+        merged = dict1.copy()
+        for key, value in dict2.items():
+            merged[key] = merged.get(key, 0) + value
+        return merged
 
     def get_video_usage_report(self, video_id: str = None) -> dict:
         """Get usage report for a specific video or all videos"""
@@ -223,4 +286,110 @@ class VideoUsageTracker:
         return {
             'total_videos_tracked': len(videos_with_stats),
             'videos': videos_with_stats
+        }
+
+    def debug_compilation_contents(self, video_id: str = None):
+        """Debug method to see what's in compilations for a specific video"""
+        if not video_id:
+            print("Please provide a video_id to debug")
+            return
+
+        print(f"DEBUG: Checking compilations for video_id: {video_id}")
+
+        # Check auto-generated compilations
+        auto_comps = list(self.compilations_collection.find({
+            'timestamps.video_id': video_id
+        }))
+
+        print(f"Found {len(auto_comps)} auto-generated compilations")
+        for i, comp in enumerate(auto_comps):
+            print(f"  Auto-compilation {i+1}:")
+            print(f"    Title: {comp.get('title', 'N/A')}")
+            print(f"    Duration: {comp.get('duration_rounded', 'N/A')} min")
+            print(f"    Timestamps count: {len(comp.get('timestamps', []))}")
+
+            # Find position of video in timestamps
+            timestamps = comp.get('timestamps', [])
+            for j, ts in enumerate(timestamps):
+                if ts.get('video_id') == video_id:
+                    print(f"    Found at position {j+1} (first={j == 0})")
+                    break
+
+        # Check user-created compilations
+        user_comps = list(self.user_compilations_collection.find({
+            'timestamps.video_id': video_id
+        }))
+
+        print(f"Found {len(user_comps)} user-created compilations")
+        for i, comp in enumerate(user_comps):
+            print(f"  User-compilation {i+1}:")
+            print(f"    Title: {comp.get('title', 'N/A')}")
+            print(f"    Duration: {comp.get('duration_rounded', 'N/A')} min")
+            print(f"    Timestamps count: {len(comp.get('timestamps', []))}")
+
+            # Find position of video in timestamps
+            timestamps = comp.get('timestamps', [])
+            for j, ts in enumerate(timestamps):
+                if ts.get('video_id') == video_id:
+                    print(f"    Found at position {j+1} (first={j == 0})")
+                    break
+
+    def recalculate_all_stats(self):
+        """Force recalculation of all video usage statistics"""
+        print("Recalculating usage statistics for all videos...")
+
+        # Get all unique video_ids that appear in any compilation
+        auto_video_ids = set()
+        user_video_ids = set()
+
+        # Get video IDs from auto-generated compilations
+        for comp in self.compilations_collection.find({}, {'timestamps.video_id': 1}):
+            for timestamp in comp.get('timestamps', []):
+                if timestamp.get('video_id'):
+                    auto_video_ids.add(timestamp['video_id'])
+
+        # Get video IDs from user compilations
+        for comp in self.user_compilations_collection.find({}, {'timestamps.video_id': 1}):
+            for timestamp in comp.get('timestamps', []):
+                if timestamp.get('video_id'):
+                    user_video_ids.add(timestamp['video_id'])
+
+        all_used_video_ids = auto_video_ids.union(user_video_ids)
+
+        print(
+            f"Found {len(all_used_video_ids)} unique videos used in compilations")
+        print(f"Auto-compilation videos: {len(auto_video_ids)}")
+        print(f"User-compilation videos: {len(user_video_ids)}")
+
+        # Update stats for all videos that appear in compilations
+        updated_count = 0
+        for video_id in all_used_video_ids:
+            try:
+                self._update_single_video_stats(video_id)
+                updated_count += 1
+                if updated_count % 100 == 0:  # Progress indicator
+                    print(f"Updated {updated_count} videos...")
+            except Exception as e:
+                print(f"Error updating stats for video {video_id}: {e}")
+
+        # Clear stats for videos that are no longer used
+        cleared_count = self.videos_collection.update_many(
+            {
+                'video_id': {'$nin': list(all_used_video_ids)},
+                'compilation_usage_stats': {'$exists': True}
+            },
+            {
+                '$unset': {'compilation_usage_stats': 1},
+                '$set': {'stats_updated_at': datetime.utcnow()}
+            }
+        ).modified_count
+
+        print(f"Updated stats for {updated_count} videos")
+        print(
+            f"Cleared stats for {cleared_count} videos no longer in compilations")
+
+        return {
+            'updated': updated_count,
+            'cleared': cleared_count,
+            'total_compilation_videos': len(all_used_video_ids)
         }

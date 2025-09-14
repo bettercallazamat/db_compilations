@@ -236,11 +236,24 @@ class CompilationCreator:
             if not candidates:
                 continue
 
-            # Additional filter: ensure videos are within duration limit
-            valid_candidates = [
-                v for v in candidates
-                if (self.MIN_VIDEO_DURATION_SECONDS <= v.get('duration_seconds', 0) <= self.MAX_VIDEO_DURATION_SECONDS)
-            ]
+            # Check date constraint and ensure videos are within duration limit
+            cutoff_date = datetime(2024, 12, 1) # Lya-lya date
+            valid_candidates = []
+
+            for v in candidates:
+                try:
+                    published_at = v.get('published_at', '')
+                    video_date = datetime.fromisoformat(
+                        published_at.replace('Z', '+00:00'))
+                    video_date = video_date.replace(tzinfo=None)
+
+                    if video_date > cutoff_date:
+                        # Check duration constraint
+                        duration = v.get('duration_seconds', 0)
+                        if self.MIN_VIDEO_DURATION_SECONDS <= duration <= self.MAX_VIDEO_DURATION_SECONDS:
+                            valid_candidates.append(v)
+                except (ValueError, TypeError):
+                    continue
 
             if not valid_candidates:
                 continue
@@ -326,12 +339,12 @@ class CompilationCreator:
         all_candidates = []
         used_video_ids = {first_video['video_id']}
 
-        # Prioritize higher quality videos but include variety
+        # Updated category weights to prioritize lower-quality videos
         category_weights = {
-            VideoCategory.TOP_25_PERCENT: 0.35,      # 40% from top tier
-            VideoCategory.SECOND_25_PERCENT: 0.35,  # 35% from second tier
-            VideoCategory.THIRD_25_PERCENT: 0.25,   # 20% from third tier
-            VideoCategory.BOTTOM_25_PERCENT: 0.05   # 5% from bottom tier
+            VideoCategory.TOP_25_PERCENT: 0.10,       # 10% from top tier
+            VideoCategory.SECOND_25_PERCENT: 0.15,   # 15% from second tier
+            VideoCategory.THIRD_25_PERCENT: 0.30,   # 30% from third tier
+            VideoCategory.BOTTOM_25_PERCENT: 0.45   # 45% from bottom tier
         }
 
         # Build weighted candidate pool
@@ -366,11 +379,16 @@ class CompilationCreator:
                 duration_fit = max(
                     0, 1.0 - (video_duration - remaining_duration) / remaining_duration)
 
-            # Quality score based on retention and category
-            quality_score = (video.get('retention_30s', 0) ) * video.get('_selection_weight', 0.1)
+            # Quality score based on retention and category weight
+            # Modified to give more weight to the category weight for lower-tier videos
+            retention_score = video.get('retention_30s', 0) / 100.0
+            category_weight = video.get('_selection_weight', 0.1)
 
-            # Combined score
-            return 0.7 * duration_fit + 0.3 * quality_score
+            # Boost lower-tier videos by giving more importance to category weight
+            quality_score = retention_score * category_weight
+
+            # Combined score - you might want to adjust these ratios
+            return 0.6 * duration_fit + 0.4 * quality_score
 
         # Continue selecting videos until target duration is approximately met
         while current_duration < target_duration_seconds * 0.95:  # 95% of target duration
@@ -401,6 +419,19 @@ class CompilationCreator:
             # Remove selected video from future consideration
             all_candidates = [
                 v for v in all_candidates if v['video_id'] != selected_video['video_id']]
+
+        # Sort the final selection from highest quality to lowest quality
+        # Keep the first video in its position, then sort the rest
+        if len(selected_videos) > 1:
+            first_video = selected_videos[0]  # Keep first video at the beginning
+            remaining_videos = selected_videos[1:]
+
+            # Sort remaining videos by retention rate (highest to lowest)
+            remaining_videos.sort(key=lambda v: v.get(
+                'retention_30s', 0), reverse=True)
+
+            # Reconstruct the list with first video first, then sorted videos
+            selected_videos = [first_video] + remaining_videos
 
         return selected_videos
 
@@ -740,8 +771,8 @@ class CompilationCreator:
                 return False
 
             # Only allow deletion of non-published compilations
-            if compilation.get('status') == CompilationStatus.PUBLISHED.value:
-                return False
+            # if compilation.get('status') == CompilationStatus.PUBLISHED.value:
+            #     return False
 
             result = self.user_compilations_collection.delete_one({
                 '_id': ObjectId(compilation_id)

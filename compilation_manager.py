@@ -6,11 +6,25 @@ from compilation_parser import CompilationParser, VideoUsageTracker
 class CompilationManager:
     """Manager for handling compilation videos and their relationships"""
 
-    def __init__(self, videos_collection, compilations_collection):
+    def __init__(self, videos_collection, compilations_collection, user_compilations_collection=None):
         self.videos_collection = videos_collection
         self.compilations_collection = compilations_collection
-        self.usage_tracker = VideoUsageTracker(
-            compilations_collection, videos_collection)
+        self.user_compilations_collection = user_compilations_collection
+
+        # Fixed VideoUsageTracker initialization - check for None explicitly
+        if user_compilations_collection is not None:
+            self.usage_tracker = VideoUsageTracker(
+                compilations_collection,
+                user_compilations_collection,
+                videos_collection
+            )
+        else:
+            # Fallback: use compilations_collection for both parameters
+            self.usage_tracker = VideoUsageTracker(
+                compilations_collection,
+                compilations_collection,
+                videos_collection
+            )
 
     def process_all_compilations(self):
         """

@@ -817,8 +817,8 @@ function displayResults(results) {
             <i class="bi bi-filter"></i> Filter
         </button>
         <ul class="dropdown-menu">
-            <li><a class="dropdown-item" href="?status=not_published">Not Published</a></li>
-            <li><a class="dropdown-item" href="?status=published">Published</a></li>
+            <li><a class="dropdown-item" href="?status=not_published">Generated</a></li>
+            <li><a class="dropdown-item" href="?status=published">Ready to upload</a></li>
             <li><a class="dropdown-item" href="?status=draft">Drafts</a></li>
             <li><hr class="dropdown-divider"></li>
             <li><a class="dropdown-item" href="/user-compilations">All Compilations</a></li>
@@ -837,13 +837,13 @@ function displayResults(results) {
     <div class="col-md-3">
         <div class="stats-card bg-success">
             <span class="stats-number">{{ stats.published }}</span>
-            <span>Published</span>
+            <span>Ready to upload</span>
         </div>
     </div>
     <div class="col-md-3">
         <div class="stats-card bg-warning">
             <span class="stats-number">{{ stats.not_published }}</span>
-            <span>Not Published</span>
+            <span>Generated</span>
         </div>
     </div>
     <div class="col-md-3">
@@ -887,9 +887,9 @@ function displayResults(results) {
                         </td>
                         <td>
                             {% if compilation.status == 'published' %}
-                                <span class="status-badge bg-success">Published</span>
+                                <span class="status-badge bg-success">Ready to upload</span>
                             {% elif compilation.status == 'not_published' %}
-                                <span class="status-badge bg-warning text-dark">Not Published</span>
+                                <span class="status-badge bg-warning text-dark">Generated</span>
                             {% else %}
                                 <span class="status-badge bg-secondary">Draft</span>
                             {% endif %}
@@ -910,11 +910,9 @@ function displayResults(results) {
                                 <button class="btn btn-outline-info" onclick="exportCompilation('{{ compilation._id }}')">
                                     <i class="bi bi-download"></i>
                                 </button>
-                                {% if compilation.status != 'published' %}
                                 <button class="btn btn-outline-danger" onclick="deleteCompilation('{{ compilation._id }}')">
                                     <i class="bi bi-trash"></i>
                                 </button>
-                                {% endif %}
                             </div>
                         </td>
                     </tr>
@@ -948,7 +946,7 @@ function displayResults(results) {
 {% block extra_js %}
 <script>
 function publishCompilation(compilationId) {
-    if (confirm('Are you sure you want to publish this compilation? This action cannot be undone.')) {
+    if (confirm('Are you sure you want to mark this compilation as Ready?')) {
         fetch(`/api/compilation/${compilationId}/publish`, {
             method: 'POST'
         })
@@ -991,7 +989,7 @@ function exportCompilation(compilationId) {
 }
 
 function deleteCompilation(compilationId) {
-    if (confirm('Are you sure you want to delete this compilation? This action cannot be undone.')) {
+    if (confirm('Are you sure you want to delete this compilation?')) {
         fetch(`/api/compilation/${compilationId}/delete`, {
             method: 'DELETE'
         })

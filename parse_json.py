@@ -12,7 +12,7 @@ import re
 
 # Import our enhanced modules
 from compilation_manager import CompilationManager
-from compilation_parser import CompilationParser
+from compilation_parser import CompilationParser, VideoUsageTracker
 from compilation_creator import CompilationCreator, CompilationStatus, VideoCategory
 from export_manager import CompilationExporter
 from frontend_manager import FrontendTemplateManager
@@ -29,7 +29,11 @@ compilations_collection = mongo.db.compilations
 user_compilations_collection = mongo.db.user_compilations  # New collection for user-created compilations
 
 # Initialize managers with enhanced functionality
-compilation_manager = CompilationManager(videos_collection, compilations_collection)
+compilation_manager = CompilationManager(
+    videos_collection,
+    compilations_collection,
+    user_compilations_collection  # Add this third parameter
+)
 compilation_creator = CompilationCreator(videos_collection, compilations_collection, user_compilations_collection)
 compilation_exporter = CompilationExporter(user_compilations_collection, videos_collection)
 frontend_manager = FrontendTemplateManager()
@@ -162,9 +166,17 @@ class VideoManager:
                         for error in processing_results['errors'][:3]:  # Show first 3 errors
                             print(f"       • {error}")
 
+                    
+
                 except Exception as video_error:
                     errors.append(f'Video {i+1}: {str(video_error)}')
                     continue
+            # FOR DEBUG =====================
+            tracker = VideoUsageTracker(
+                compilations_collection, user_compilations_collection, videos_collection)
+            tracker.recalculate_all_stats()
+
+            # ===============================
 
             return {
                 'imported': imported_count,
