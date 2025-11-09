@@ -66,7 +66,7 @@ class CompilationParser:
         return max(5, int(rounded_minutes))  # Minimum 5 minutes
 
     @staticmethod
-    def extract_compilation_data(video_doc: dict) -> Optional[dict]:
+    def extract_compilation_data(video_doc: dict, videos_collection=None) -> Optional[dict]:
         """Extract compilation data from video document"""
         description = video_doc.get('description', '')
         title = video_doc.get('title', '')
@@ -76,6 +76,11 @@ class CompilationParser:
             return None
 
         timestamps = CompilationParser.parse_timestamps(description)
+
+        # If videos_collection is provided, try to match video IDs
+        if videos_collection is not None and timestamps:
+            timestamps = CompilationParser._match_video_ids(timestamps, videos_collection)
+
         duration_seconds = video_doc.get('duration_seconds', 0)
         duration_rounded = CompilationParser.round_duration_to_nearest_5min(
             duration_seconds)
@@ -95,6 +100,52 @@ class CompilationParser:
         }
 
         return compilation_data
+
+    @staticmethod
+    def _match_video_ids(timestamps: List[Dict], videos_collection) -> List[Dict]:
+        """
+        Match video titles to actual video IDs in the database
+        """
+        matched_timestamps = []
+
+        for timestamp in timestamps:
+            title = timestamp.get('title', '').strip()
+            if not title:
+                matched_timestamps.append(timestamp)
+                continue
+
+            # Clean the title for matching (remove common suffixes)
+            clean_title = title.replace(' | D Billions Kids Songs', '').strip()
+            clean_title = clean_title.replace(' | Mega Compilation | D Billions Kids Songs', '').strip()
+
+            # Try exact title match first
+            video = videos_collection.find_one({'title': title})
+
+            # If no exact match, try cleaned title match
+            if not video and clean_title != title:
+                video = videos_collection.find_one({'title': clean_title})
+
+            # If still no match, try partial title match (first 30 characters)
+            if not video and len(clean_title) > 10:
+                partial_title = clean_title[:30]
+                video = videos_collection.find_one({
+                    'title': {'$regex': re.escape(partial_title), '$options': 'i'}
+                })
+
+            # Create matched timestamp
+            matched_timestamp = timestamp.copy()
+            if video:
+                matched_timestamp['video_id'] = video.get('video_id', '')
+                # Also store the matched title for reference
+                matched_timestamp['matched_title'] = video.get('title', '')
+            else:
+                # Mark as unmatched
+                matched_timestamp['video_id'] = ''
+                matched_timestamp['matched_title'] = clean_title
+
+            matched_timestamps.append(matched_timestamp)
+
+        return matched_timestamps
 
 
 class VideoUsageTracker:

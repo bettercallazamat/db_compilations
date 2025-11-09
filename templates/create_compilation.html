@@ -1,601 +1,654 @@
-<!DOCTYPE html>
-<html lang="en">
+{% extends "base.html" %}
 
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Create New Compilation - Video Analytics</title>
-  <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.1.3/css/bootstrap.min.css" rel="stylesheet">
-  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-  <style>
-    .creation-hero {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      border-radius: 15px;
-      padding: 2rem;
-      margin-bottom: 2rem;
-      text-align: center;
+{% block title %}Create New Compilation - Video Analytics{% endblock %}
+
+{% block extra_css %}
+<style>
+  .creation-hero {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 15px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    text-align: center;
+  }
+
+  .form-container {
+    background: white;
+    border-radius: 12px;
+    padding: 2rem;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    border: 1px solid #e9ecef;
+    max-width: 500px;
+    margin: 0 auto;
+  }
+
+  .btn-create {
+    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+    border: none;
+    border-radius: 25px;
+    padding: 12px 40px;
+    font-weight: 600;
+    color: white;
+    width: 100%;
+    margin-top: 1rem;
+    transition: all 0.3s ease;
+  }
+
+  .btn-create:hover:not(:disabled) {
+    background: linear-gradient(135deg, #218838 0%, #1c9d8a 100%);
+    transform: translateY(-2px);
+    color: white;
+  }
+
+  .btn-create:disabled {
+    background: #6c757d;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  .btn-preview {
+    background: linear-gradient(135deg, #ffc107 0%, #fd7e14 100%);
+    border: none;
+    border-radius: 25px;
+    padding: 8px 20px;
+    font-weight: 500;
+    color: white;
+    width: 100%;
+    margin-bottom: 1rem;
+    transition: all 0.3s ease;
+  }
+
+  .btn-preview:hover:not(:disabled) {
+    background: linear-gradient(135deg, #e0a800 0%, #dc6502 100%);
+    color: white;
+  }
+
+  .btn-preview:disabled {
+    background: #6c757d;
+    cursor: not-allowed;
+  }
+
+  .preview-card {
+    background: #f8f9fa;
+    border: 2px solid #e9ecef;
+    border-radius: 10px;
+    padding: 1.5rem;
+    margin-top: 1rem;
+    display: none;
+  }
+
+  .preview-card.show {
+    display: block;
+    animation: fadeIn 0.3s ease;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
     }
 
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .loading-spinner {
+    display: none;
+    text-align: center;
+    padding: 1rem;
+  }
+
+  .loading-spinner.show {
+    display: block;
+  }
+
+  .success-message, .error-message {
+    display: none;
+    padding: 1rem;
+    margin-top: 1rem;
+    border-radius: 8px;
+  }
+
+  .success-message {
+    background-color: #d1edff;
+    border: 1px solid #0dcaf0;
+    color: #0c63e4;
+  }
+
+  .success-message.show {
+    display: block;
+  }
+
+  .error-message {
+    background-color: #f8d7da;
+    border: 1px solid #f1aeb5;
+    color: #721c24;
+  }
+
+  .error-message.show {
+    display: block;
+  }
+
+  .form-control,
+  .form-select {
+    border-radius: 8px;
+    border: 1px solid #ced4da;
+    padding: 0.75rem 1rem;
+    transition: all 0.3s ease;
+  }
+
+  .form-control:focus,
+  .form-select:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+  }
+
+  .form-label {
+    font-weight: 600;
+    color: #495057;
+    margin-bottom: 0.5rem;
+  }
+
+  .form-text {
+    color: #6c757d;
+    font-size: 0.875rem;
+  }
+
+  .form-text ul {
+    margin-bottom: 0;
+    padding-left: 1.2rem;
+  }
+
+  .alert {
+    border-radius: 8px;
+  }
+
+  .stats-preview {
+    display: flex;
+    justify-content: space-around;
+    margin: 1rem 0;
+  }
+
+  .stat-item {
+    text-align: center;
+  }
+
+  .stat-number {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #667eea;
+  }
+
+  .stat-label {
+    font-size: 0.875rem;
+    color: #6c757d;
+  }
+
+  .score-excellent {
+    color: #28a745;
+  }
+
+  .score-good {
+    color: #20c997;
+  }
+
+  .score-fair {
+    color: #ffc107;
+  }
+
+  .score-poor {
+    color: #dc3545;
+  }
+
+  @media (max-width: 768px) {
     .form-container {
-      background: white;
-      border-radius: 12px;
-      padding: 2rem;
-      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-      border: 1px solid #e9ecef;
-      max-width: 500px;
-      margin: 0 auto;
-    }
-
-    .btn-create {
-      background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
-      border: none;
-      border-radius: 25px;
-      padding: 12px 40px;
-      font-weight: 600;
-      color: white;
-      width: 100%;
-      margin-top: 1rem;
-      transition: all 0.3s ease;
-    }
-
-    .btn-create:hover:not(:disabled) {
-      background: linear-gradient(135deg, #218838 0%, #1c9d8a 100%);
-      transform: translateY(-2px);
-      color: white;
-    }
-
-    .btn-create:disabled {
-      background: #6c757d;
-      cursor: not-allowed;
-      transform: none;
-    }
-
-    .btn-preview {
-      background: linear-gradient(135deg, #ffc107 0%, #fd7e14 100%);
-      border: none;
-      border-radius: 25px;
-      padding: 8px 20px;
-      font-weight: 500;
-      color: white;
-      width: 100%;
-      margin-bottom: 1rem;
-      transition: all 0.3s ease;
-    }
-
-    .btn-preview:hover:not(:disabled) {
-      background: linear-gradient(135deg, #e0a800 0%, #dc6502 100%);
-      color: white;
-    }
-
-    .btn-preview:disabled {
-      background: #6c757d;
-      cursor: not-allowed;
-    }
-
-    .preview-card {
-      background: #f8f9fa;
-      border: 2px solid #e9ecef;
-      border-radius: 10px;
       padding: 1.5rem;
-      margin-top: 1rem;
-      display: none;
+      margin: 0 1rem;
     }
 
-    .preview-card.show {
-      display: block;
-      animation: fadeIn 0.3s ease;
+    .creation-hero {
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
     }
 
-    @keyframes fadeIn {
-      from {
-        opacity: 0;
-        transform: translateY(10px);
-      }
-
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
+    .creation-hero h1 {
+      font-size: 1.75rem;
     }
+  }
+</style>
+{% endblock %}
 
-    .stat-row {
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: 0.5rem;
-      padding: 0.5rem 0;
-      border-bottom: 1px solid #e9ecef;
-    }
+{% block content %}
+<!-- Creation Hero Section -->
+<div class="creation-hero">
+  <h1 class="mb-3">
+    <i class="fas fa-magic me-2"></i>Create New Compilation
+  </h1>
+  <p class="mb-0 opacity-75">
+    Generate intelligent video compilations using advanced algorithms
+  </p>
+</div>
 
-    .stat-label {
-      font-weight: 500;
-      color: #6c757d;
-    }
-
-    .stat-value {
-      font-weight: 600;
-      color: #495057;
-    }
-
-    .quality-score {
-      text-align: center;
-      padding: 1rem;
-      background: white;
-      border-radius: 8px;
-      margin-top: 1rem;
-    }
-
-    .score-circle {
-      width: 60px;
-      height: 60px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.2rem;
-      font-weight: bold;
-      margin: 0 auto 0.5rem;
-      color: white;
-    }
-
-    .score-excellent {
-      background: #28a745;
-    }
-
-    .score-good {
-      background: #28a745;
-    }
-
-    .score-fair {
-      background: #ffc107;
-      color: #333;
-    }
-
-    .score-poor {
-      background: #dc3545;
-    }
-
-    .loading-spinner {
-      display: none;
-      text-align: center;
-      margin: 1rem 0;
-    }
-
-    .success-message,
-    .error-message {
-      display: none;
-      padding: 1rem;
-      border-radius: 8px;
-      margin-top: 1rem;
-    }
-
-    .success-message {
-      background: #d4edda;
-      color: #155724;
-      border: 1px solid #c3e6cb;
-    }
-
-    .error-message {
-      background: #f8d7da;
-      color: #721c24;
-      border: 1px solid #f5c6cb;
-    }
-
-    .form-control,
-    .form-select {
-      border-radius: 8px;
-      border: 2px solid #e9ecef;
-      transition: border-color 0.3s ease;
-    }
-
-    .form-control:focus,
-    .form-select:focus {
-      border-color: #667eea;
-      box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
-    }
-
-    .alert-warning {
-      background: #fff3cd;
-      color: #856404;
-      border: 1px solid #ffeaa7;
-      padding: 0.75rem 1rem;
-      border-radius: 8px;
-      margin-top: 1rem;
-    }
-  </style>
-</head>
-
-<body>
-  <div class="container mt-4">
-    <!-- Hero Section -->
-    <div class="creation-hero">
-      <h1 class="display-6 mb-3">
-        <i class="fas fa-magic me-3"></i>Create New Compilation
-      </h1>
-      <p class="lead mb-0">Generate intelligent video compilations using advanced selection algorithms</p>
+<!-- Main Form Container -->
+<div class="form-container">
+  <form id="compilationForm">
+    <div class="mb-4">
+      <label for="duration" class="form-label">
+        <i class="fas fa-clock me-2"></i>Target Duration <span class="text-danger">*</span>
+      </label>
+      <select class="form-select" id="duration" name="duration" required>
+        <option value="">Select duration...</option>
+        <option value="5">5 minutes</option>
+        <option value="10">10 minutes</option>
+        <option value="15">15 minutes</option>
+        <option value="20">20 minutes</option>
+        <option value="25">25 minutes</option>
+        <option value="30">30 minutes</option>
+        <option value="35">35 minutes</option>
+        <option value="40">40 minutes</option>
+        <option value="45">45 minutes</option>
+        <option value="50">50 minutes</option>
+        <option value="55">55 minutes</option>
+        <option value="60">60 minutes</option>
+      </select>
     </div>
 
-    <!-- Simple Creation Form -->
-    <div class="form-container">
-      <form id="compilationForm">
-        <div class="mb-4">
-          <label for="duration" class="form-label">
-            <i class="fas fa-clock me-2"></i>Target Duration <span class="text-danger">*</span>
-          </label>
-          <select class="form-select" id="duration" name="duration" required>
-            <option value="">Select duration...</option>
-            <option value="5">5 minutes</option>
-            <option value="10">10 minutes</option>
-            <option value="15">15 minutes</option>
-            <option value="20">20 minutes</option>
-            <option value="25">25 minutes</option>
-            <option value="30">30 minutes</option>
-            <option value="35">35 minutes</option>
-            <option value="40">40 minutes</option>
-            <option value="45">45 minutes</option>
-            <option value="50">50 minutes</option>
-            <option value="55">55 minutes</option>
-            <option value="60">60 minutes</option>
-          </select>
-        </div>
-
-        <div class="mb-4">
-          <label for="fromDate" class="form-label">
-            <i class="fas fa-calendar me-2"></i>Include videos from date (optional)
-          </label>
-          <input type="date" class="form-control" id="fromDate" name="from_date">
-          <div class="form-text">Leave empty to include all available videos</div>
-        </div>
-
-        <div class="mb-4">
-          <label for="titlePrefix" class="form-label">
-            <i class="fas fa-tag me-2"></i>Title Prefix (optional)
-          </label>
-          <input type="text" class="form-control" id="titlePrefix" name="title_prefix"
-            placeholder="e.g., Best Moments, Highlights..." maxlength="50">
-          <div class="form-text">Will be used to generate the compilation title</div>
-        </div>
-
-        <!-- Preview Button -->
-        <button type="button" class="btn btn-preview" id="previewBtn" disabled>
-          <i class="fas fa-eye me-2"></i>Preview Compilation
-        </button>
-
-        <!-- Preview Card -->
-        <div id="previewCard" class="preview-card">
-          <h6><i class="fas fa-chart-bar me-2"></i>Compilation Preview</h6>
-          <div id="previewContent">
-            <!-- Preview content will be loaded here -->
-          </div>
-        </div>
-
-        <!-- Create Button -->
-        <button type="submit" class="btn btn-create" id="createBtn" disabled>
-          <i class="fas fa-magic me-2"></i>Create Compilation
-        </button>
-
-        <!-- Loading Spinner -->
-        <div class="loading-spinner" id="loadingSpinner">
-          <div class="spinner-border text-primary" role="status">
-            <span class="visually-hidden">Creating...</span>
-          </div>
-          <p class="mt-2 mb-0">Creating your compilation...</p>
-        </div>
-
-        <!-- Success Message -->
-        <div class="success-message" id="successMessage">
-          <h6><i class="fas fa-check-circle me-2"></i>Compilation Created Successfully!</h6>
-          <p class="mb-2">Your compilation has been created and is ready for preview.</p>
-          <a href="#" id="viewCompilationLink" class="btn btn-success btn-sm">
-            <i class="fas fa-eye me-1"></i>View Compilation
-          </a>
-        </div>
-
-        <!-- Error Message -->
-        <div class="error-message" id="errorMessage">
-          <h6><i class="fas fa-exclamation-triangle me-2"></i>Creation Failed</h6>
-          <p class="mb-0" id="errorText">An error occurred while creating the compilation.</p>
-        </div>
-      </form>
+    <div class="mb-4">
+      <label for="compilationType" class="form-label">
+        <i class="fas fa-cogs me-2"></i>Compilation Type <span class="text-danger">*</span>
+      </label>
+      <select class="form-select" id="compilationType" name="compilation_type" required>
+        <option value="">Select compilation type...</option>
+        <option value="default">Default Compilation</option>
+        <option value="live">Live Compilation</option>
+      </select>
+      <div class="form-text mt-2">
+        <strong>Compilation types:</strong>
+        <ul class="mt-1 mb-0">
+          <li><strong>Default:</strong> Uses best videos based on retention and quality</li>
+          <li><strong>Live:</strong> High → Good → Low → Low pattern for live audience</li>
+        </ul>
+      </div>
     </div>
 
-    <!-- Quick Actions -->
-    <div class="text-center mt-4">
-      <a href="/user-compilations" class="btn btn-outline-primary me-3">
-        <i class="fas fa-list me-2"></i>My Compilations
-      </a>
-      <a href="/" class="btn btn-outline-secondary">
-        <i class="fas fa-arrow-left me-2"></i>Back to Videos
+    <div class="mb-4">
+      <label for="fromDate" class="form-label">
+        <i class="fas fa-calendar me-2"></i>Date Range (optional)
+      </label>
+      <div class="row">
+        <div class="col-md-6">
+          <input type="date" class="form-control" id="fromDate" name="from_date" placeholder="From date">
+          <div class="form-text mt-1">From date (optional)</div>
+        </div>
+        <div class="col-md-6">
+          <input type="date" class="form-control" id="toDate" name="to_date" placeholder="To date">
+          <div class="form-text mt-1">To date (optional)</div>
+        </div>
+      </div>
+      <div class="form-text mt-2">
+        <strong>Date range logic:</strong>
+        <ul class="mt-1 mb-0">
+          <li>Both empty = All videos</li>
+          <li>Only "From" = Videos from that date to today</li>
+          <li>Only "To" = Videos from beginning to that date</li>
+          <li>Both = Videos in the date range</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Preview Button -->
+    <button type="button" class="btn btn-preview" id="previewBtn" disabled>
+      <i class="fas fa-eye me-2"></i>Preview Compilation
+    </button>
+
+    <!-- Preview Card -->
+    <div id="previewCard" class="preview-card">
+      <h6><i class="fas fa-chart-bar me-2"></i>Compilation Preview</h6>
+      <div id="previewContent">
+        <!-- Preview content will be loaded here -->
+      </div>
+    </div>
+
+    <!-- Loading Spinner -->
+    <div id="loadingSpinner" class="loading-spinner">
+      <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading...</span>
+      </div>
+      <p class="mt-2 mb-0">Processing your request...</p>
+    </div>
+
+    <!-- Success Message -->
+    <div id="successMessage" class="success-message">
+      <i class="fas fa-check-circle me-2"></i>
+      <strong>Success!</strong> Compilation created successfully.
+      <br>
+      <a href="#" id="viewCompilationLink" class="btn btn-sm btn-primary mt-2">
+        <i class="fas fa-eye me-1"></i>View Compilation
       </a>
     </div>
-  </div>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.1.3/js/bootstrap.bundle.min.js"></script>
-  <script>
-    document.addEventListener('DOMContentLoaded', function () {
-      const form = document.getElementById('compilationForm');
-      const previewBtn = document.getElementById('previewBtn');
-      const createBtn = document.getElementById('createBtn');
-      const previewCard = document.getElementById('previewCard');
-      const previewContent = document.getElementById('previewContent');
-      const loadingSpinner = document.getElementById('loadingSpinner');
-      const successMessage = document.getElementById('successMessage');
-      const errorMessage = document.getElementById('errorMessage');
-      const durationSelect = document.getElementById('duration');
-      const fromDateInput = document.getElementById('fromDate');
-      const titlePrefixInput = document.getElementById('titlePrefix');
+    <!-- Error Message -->
+    <div id="errorMessage" class="error-message">
+      <i class="fas fa-exclamation-triangle me-2"></i>
+      <strong>Error!</strong> <span id="errorText">An error occurred.</span>
+    </div>
 
-      // Track preview state
-      let previewGenerated = false;
-      let isFormSubmitting = false;
+    <!-- Create Button -->
+    <button type="submit" class="btn btn-create" id="createBtn" disabled>
+      <i class="fas fa-plus me-2"></i>Create Compilation
+    </button>
+  </form>
+</div>
 
-      // Validation function
-      function validateForm() {
-        const duration = durationSelect.value.trim();
-        return duration !== '';
-      }
+<!-- Quick Actions -->
+<div class="text-center mt-4">
+  <a href="/user-compilations" class="btn btn-outline-primary me-3">
+    <i class="fas fa-list me-2"></i>My Compilations
+  </a>
+  <a href="/" class="btn btn-outline-secondary">
+    <i class="fas fa-arrow-left me-2"></i>Back to Videos
+  </a>
+</div>
+{% endblock %}
 
-      // Update button states based on form validation
-      function updateButtonStates() {
-        const isValid = validateForm();
-        previewBtn.disabled = !isValid;
-        // Create button is only enabled after successful preview
-        createBtn.disabled = !previewGenerated || isFormSubmitting;
-      }
+{% block extra_js %}
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const form = document.getElementById('compilationForm');
+    const previewBtn = document.getElementById('previewBtn');
+    const createBtn = document.getElementById('createBtn');
+    const previewCard = document.getElementById('previewCard');
+    const previewContent = document.getElementById('previewContent');
+    const loadingSpinner = document.getElementById('loadingSpinner');
+    const successMessage = document.getElementById('successMessage');
+    const errorMessage = document.getElementById('errorMessage');
+    const durationSelect = document.getElementById('duration');
+    const fromDateInput = document.getElementById('fromDate');
+    const toDateInput = document.getElementById('toDate');
+    const compilationTypeSelect = document.getElementById('compilationType');
 
-      // Reset states when form changes
-      function resetFormState() {
-        previewGenerated = false;
-        previewCard.classList.remove('show');
-        hideMessages();
-        updateButtonStates();
-      }
+    // Track preview state
+    let previewGenerated = false;
+    let isFormSubmitting = false;
 
-      // Hide all messages
-      function hideMessages() {
-        errorMessage.style.display = 'none';
-        successMessage.style.display = 'none';
-      }
+    // Validation function
+    function validateForm() {
+      const duration = durationSelect.value.trim();
+      const compilationType = document.getElementById('compilationType').value.trim();
+      return duration !== '' && compilationType !== '';
+    }
 
-      // Show error message
-      function showError(message) {
-        hideMessages();
-        document.getElementById('errorText').textContent = message;
-        errorMessage.style.display = 'block';
-      }
+    // Update button states based on form validation
+    function updateButtonStates() {
+      const isValid = validateForm();
+      previewBtn.disabled = !isValid;
+      // Create button is only enabled after successful preview
+      createBtn.disabled = !previewGenerated || isFormSubmitting;
+    }
 
-      // Show success message
-      function showSuccess(data) {
-        hideMessages();
-        document.getElementById('viewCompilationLink').href = `/compilation-preview/${data.compilation_id}`;
-        successMessage.style.display = 'block';
-      }
-
-      // Event listeners for form field changes
-      durationSelect.addEventListener('change', function () {
-        resetFormState();
-      });
-
-      fromDateInput.addEventListener('change', function () {
-        if (previewGenerated) {
-          resetFormState();
-        }
-      });
-
-      titlePrefixInput.addEventListener('input', function () {
-        // Title prefix doesn't affect preview, so don't reset state
-      });
-
-      // Initial button state update - FIXED: Only run after DOM is ready
+    // Reset states when form changes
+    function resetFormState() {
+      previewGenerated = false;
+      previewCard.classList.remove('show');
+      hideMessages();
       updateButtonStates();
+    }
 
-      // Preview functionality
-      previewBtn.addEventListener('click', function (e) {
-        e.preventDefault();
+    // Hide all messages
+    function hideMessages() {
+      errorMessage.style.display = 'none';
+      successMessage.style.display = 'none';
+    }
 
-        if (!validateForm()) {
-          showError('Please select a duration first');
-          return;
-        }
+    // Show error message
+    function showError(message) {
+      hideMessages();
+      document.getElementById('errorText').textContent = message;
+      errorMessage.style.display = 'block';
+    }
 
-        const duration = parseInt(durationSelect.value);
+    // Show success message
+    function showSuccess(data) {
+      hideMessages();
+      document.getElementById('viewCompilationLink').href = `/compilation-preview/${data.compilation_id}`;
+      successMessage.style.display = 'block';
+    }
 
-        // Show loading state
-        previewBtn.disabled = true;
-        previewBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Generating Preview...';
+    // Event listeners for form field changes
+    durationSelect.addEventListener('change', function () {
+      resetFormState();
+    });
 
-        hideMessages();
+    compilationTypeSelect.addEventListener('change', function () {
+      resetFormState();
+    });
 
-        const formData = {
-          duration: duration,
-          from_date: fromDateInput.value || null
-        };
-
-        fetch('/api/compilation-preview', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(formData)
-        })
-          .then(response => {
-            if (!response.ok) {
-              // print(response)
-              throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            return response.json();
-          })
-          .then(data => {
-            if (data.success) {
-              displayPreview(data);
-              previewGenerated = true;
-              previewCard.classList.add('show');
-              updateButtonStates();
-            } else {
-              showError('Preview failed: ' + (data.error || 'Unknown error'));
-              previewGenerated = false;
-              updateButtonStates();
-            }
-          })
-          .catch(error => {
-            console.error('Preview error:', error);
-            showError('Network error: ' + error.message);
-            previewGenerated = false;
-            updateButtonStates();
-          })
-          .finally(() => {
-            // Reset preview button
-            previewBtn.disabled = false;
-            previewBtn.innerHTML = '<i class="fas fa-eye me-2"></i>Preview Compilation';
-            updateButtonStates();
-          });
-      });
-
-      // Form submission
-      form.addEventListener('submit', function (e) {
-        e.preventDefault();
-
-        if (!validateForm()) {
-          showError('Please select a duration first');
-          return;
-        }
-
-        if (!previewGenerated) {
-          showError('Please generate a preview first');
-          return;
-        }
-
-        if (isFormSubmitting) {
-          return; // Prevent double submission
-        }
-
-        isFormSubmitting = true;
-
-        // Show loading state
-        loadingSpinner.style.display = 'block';
-        createBtn.disabled = true;
-        createBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Creating...';
-
-        hideMessages();
-
-        const formData = {
-          duration: parseInt(durationSelect.value),
-          from_date: fromDateInput.value || null,
-          title_prefix: titlePrefixInput.value || 'Auto-Generated',
-          user_id: 'system' // In production, get from session
-        };
-
-        fetch('/api/create-compilation', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(formData)
-        })
-          .then(response => {
-            if (!response.ok) {
-              throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            return response.json();
-          })
-          .then(data => {
-            if (data.success) {
-              showSuccess(data);
-              form.reset();
-              previewCard.classList.remove('show');
-              previewGenerated = false;
-            } else {
-              showError('Creation failed: ' + (data.error || 'Unknown error'));
-            }
-          })
-          .catch(error => {
-            console.error('Creation error:', error);
-            showError('Network error: ' + error.message);
-          })
-          .finally(() => {
-            // Reset form state
-            loadingSpinner.style.display = 'none';
-            isFormSubmitting = false;
-            createBtn.innerHTML = '<i class="fas fa-magic me-2"></i>Create Compilation';
-            updateButtonStates();
-          });
-      });
-
-      function displayPreview(data) {
-        const qualityClass = getQualityClass(data.quality_score);
-        const qualityText = getQualityText(data.quality_score);
-
-        previewContent.innerHTML = `
-                    <div class="stat-row">
-                        <span class="stat-label">Available Videos:</span>
-                        <span class="stat-value">${data.total_available}</span>
-                    </div>
-                    <div class="stat-row">
-                        <span class="stat-label">Estimated Video Count:</span>
-                        <span class="stat-value">${data.estimated_video_count}</span>
-                    </div>
-                    <div class="stat-row">
-                        <span class="stat-label">Average Retention:</span>
-                        <span class="stat-value">${data.avg_retention}%</span>
-                    </div>
-                    <div class="stat-row">
-                        <span class="stat-label">Average Views:</span>
-                        <span class="stat-value">${data.avg_views.toLocaleString()}</span>
-                    </div>
-                    
-                    <div class="quality-score">
-                        <div class="score-circle ${qualityClass}">${data.quality_score}</div>
-                        <small class="text-muted">Quality Score (${qualityText})</small>
-                    </div>
-
-                    ${data.category_counts ? `
-                    <div class="mt-3">
-                        <h6>Video Quality Distribution:</h6>
-                        <div class="row text-center">
-                            <div class="col-3">
-                                <strong class="text-success">${data.category_counts.top_25}</strong>
-                                <small class="d-block text-muted">High</small>
-                            </div>
-                            <div class="col-3">
-                                <strong class="text-info">${data.category_counts.second_25}</strong>
-                                <small class="d-block text-muted">Good</small>
-                            </div>
-                            <div class="col-3">
-                                <strong class="text-warning">${data.category_counts.third_25}</strong>
-                                <small class="d-block text-muted">Fair</small>
-                            </div>
-                            <div class="col-3">
-                                <strong class="text-secondary">${data.category_counts.bottom_25}</strong>
-                                <small class="d-block text-muted">Low</small>
-                            </div>
-                        </div>
-                    </div>
-                    ` : ''}
-
-                    ${data.total_available < data.estimated_video_count ? `
-                    <div class="alert-warning">
-                        <i class="fas fa-exclamation-triangle me-2"></i>
-                        <strong>Note:</strong> Limited video availability. Compilation may be shorter than requested.
-                    </div>
-                    ` : ''}
-                `;
-      }
-
-      function getQualityClass(score) {
-        if (score >= 8) return 'score-excellent';
-        if (score >= 6) return 'score-good';
-        if (score >= 4) return 'score-fair';
-        return 'score-poor';
-      }
-
-      function getQualityText(score) {
-        if (score >= 8) return 'Excellent';
-        if (score >= 6) return 'Good';
-        if (score >= 4) return 'Fair';
-        return 'Poor';
+    fromDateInput.addEventListener('change', function () {
+      if (previewGenerated) {
+        resetFormState();
       }
     });
-  </script>
-</body>
 
-</html>
+    toDateInput.addEventListener('change', function () {
+      if (previewGenerated) {
+        resetFormState();
+      }
+    });
+
+    // Initial button state update
+    updateButtonStates();
+
+    // Preview functionality
+    previewBtn.addEventListener('click', function (e) {
+      e.preventDefault();
+
+      if (!validateForm()) {
+        showError('Please select a duration first');
+        return;
+      }
+
+      const duration = parseInt(durationSelect.value);
+
+      // Show loading state
+      previewBtn.disabled = true;
+      previewBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Generating Preview...';
+
+      hideMessages();
+
+      const formData = {
+        duration: duration,
+        compilation_type: compilationTypeSelect.value,
+        from_date: fromDateInput.value || null,
+        to_date: toDateInput.value || null
+      };
+
+      fetch('/api/compilation-preview', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData)
+      })
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          return response.json();
+        })
+        .then(data => {
+          if (data.success) {
+            displayPreview(data);
+            previewGenerated = true;
+            previewCard.classList.add('show');
+            updateButtonStates();
+          } else {
+            showError('Preview failed: ' + (data.error || 'Unknown error'));
+            previewGenerated = false;
+            updateButtonStates();
+          }
+        })
+        .catch(error => {
+          console.error('Preview error:', error);
+          showError('Network error: ' + error.message);
+          previewGenerated = false;
+          updateButtonStates();
+        })
+        .finally(() => {
+          // Reset button state
+          previewBtn.disabled = false;
+          previewBtn.innerHTML = '<i class="fas fa-eye me-2"></i>Preview Compilation';
+        });
+    });
+
+    // Form submission
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+
+      if (!previewGenerated) {
+        showError('Please generate a preview first');
+        return;
+      }
+
+      const duration = parseInt(durationSelect.value);
+
+      if (!validateForm()) {
+        showError('Please select a duration first');
+        return;
+      }
+
+      isFormSubmitting = true;
+
+      // Show loading state
+      loadingSpinner.style.display = 'block';
+      createBtn.disabled = true;
+      createBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Creating...';
+
+      hideMessages();
+
+      const formData = {
+        duration: parseInt(durationSelect.value),
+        compilation_type: compilationTypeSelect.value,
+        from_date: fromDateInput.value || null,
+        to_date: toDateInput.value || null,
+        user_id: 'system' // In production, get from session
+      };
+
+      fetch('/api/create-compilation', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData)
+      })
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          return response.json();
+        })
+        .then(data => {
+          if (data.success) {
+            showSuccess(data);
+            form.reset();
+            previewCard.classList.remove('show');
+            previewGenerated = false;
+          } else {
+            showError('Creation failed: ' + (data.error || 'Unknown error'));
+          }
+        })
+        .catch(error => {
+          console.error('Creation error:', error);
+          showError('Network error: ' + error.message);
+        })
+        .finally(() => {
+          // Reset loading state
+          loadingSpinner.style.display = 'none';
+          isFormSubmitting = false;
+          updateButtonStates();
+          createBtn.disabled = false;
+          createBtn.innerHTML = '<i class="fas fa-plus me-2"></i>Create Compilation';
+        });
+    });
+
+    // Display preview data
+    function displayPreview(data) {
+      const qualityClass = getQualityClass(data.quality_score);
+      const qualityText = getQualityText(data.quality_score);
+
+      previewContent.innerHTML = `
+        <h5 class="mb-3">Compilation Analysis</h5>
+
+        <div class="stats-preview">
+          <div class="stat-item">
+            <div class="stat-number">${data.estimated_video_count}</div>
+            <div class="stat-label">Estimated Videos</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-number">${data.total_available}</div>
+            <div class="stat-label">Available Videos</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-number ${qualityClass}">${data.quality_score.toFixed(1)}</div>
+            <div class="stat-label">Quality Score</div>
+          </div>
+        </div>
+
+        <div class="row mb-3">
+          <div class="col-md-6">
+            <small class="d-block text-muted">Average Views</small>
+            <strong>${data.avg_views.toLocaleString()}</strong>
+          </div>
+          <div class="col-md-6">
+            <small class="d-block text-muted">Average Retention</small>
+            <strong>${data.avg_retention.toFixed(1)}%</strong>
+          </div>
+        </div>
+
+        <h6 class="mb-2">Category Distribution:</h6>
+        <div class="row text-center">
+          <div class="col-3">
+            <strong class="${data.category_counts.top_25 > 0 ? 'text-success' : 'text-muted'}">${data.category_counts.top_25}</strong>
+            <small class="d-block text-muted">High</small>
+          </div>
+          <div class="col-3">
+            <strong class="${data.category_counts.second_25 > 0 ? 'text-info' : 'text-muted'}">${data.category_counts.second_25}</strong>
+            <small class="d-block text-muted">Good</small>
+          </div>
+          <div class="col-3">
+            <strong class="${data.category_counts.third_25 > 0 ? 'text-warning' : 'text-muted'}">${data.category_counts.third_25}</strong>
+            <small class="d-block text-muted">Fair</small>
+          </div>
+          <div class="col-3">
+            <strong class="${data.category_counts.bottom_25 > 0 ? 'text-danger' : 'text-muted'}">${data.category_counts.bottom_25}</strong>
+            <small class="d-block text-muted">Low</small>
+          </div>
+        </div>
+
+        ${data.total_available < data.estimated_video_count ? `
+        <div class="alert alert-warning mt-3">
+          <i class="fas fa-exclamation-triangle me-2"></i>
+          <strong>Note:</strong> Limited video availability. Compilation may be shorter than requested.
+        </div>
+        ` : ''}
+      `;
+    }
+
+    function getQualityClass(score) {
+      if (score >= 8) return 'score-excellent';
+      if (score >= 6) return 'score-good';
+      if (score >= 4) return 'score-fair';
+      return 'score-poor';
+    }
+
+    function getQualityText(score) {
+      if (score >= 8) return 'Excellent';
+      if (score >= 6) return 'Good';
+      if (score >= 4) return 'Fair';
+      return 'Poor';
+    }
+  });
+</script>
+{% endblock %}

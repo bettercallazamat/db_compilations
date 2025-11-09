@@ -817,9 +817,10 @@ function displayResults(results) {
             <i class="bi bi-filter"></i> Filter
         </button>
         <ul class="dropdown-menu">
-            <li><a class="dropdown-item" href="?status=not_published">Generated</a></li>
-            <li><a class="dropdown-item" href="?status=published">Ready to upload</a></li>
-            <li><a class="dropdown-item" href="?status=draft">Drafts</a></li>
+            <li><a class="dropdown-item" href="?status=generated">Generated</a></li>
+            <li><a class="dropdown-item" href="?status=to_do">To Do</a></li>
+            <li><a class="dropdown-item" href="?status=ready">Ready</a></li>
+            <li><a class="dropdown-item" href="?status=uploaded">Uploaded</a></li>
             <li><hr class="dropdown-divider"></li>
             <li><a class="dropdown-item" href="/user-compilations">All Compilations</a></li>
         </ul>
@@ -835,15 +836,15 @@ function displayResults(results) {
         </div>
     </div>
     <div class="col-md-3">
-        <div class="stats-card bg-success">
-            <span class="stats-number">{{ stats.published }}</span>
-            <span>Ready to upload</span>
+        <div class="stats-card bg-info">
+            <span class="stats-number">{{ stats.to_do }}</span>
+            <span>To Do</span>
         </div>
     </div>
     <div class="col-md-3">
         <div class="stats-card bg-warning">
-            <span class="stats-number">{{ stats.not_published }}</span>
-            <span>Generated</span>
+            <span class="stats-number">{{ stats.ready }}</span>
+            <span>Ready</span>
         </div>
     </div>
     <div class="col-md-3">
@@ -865,6 +866,7 @@ function displayResults(results) {
                         <th>Duration</th>
                         <th>Videos</th>
                         <th>Status</th>
+                        <th>Done by</th>
                         <th>Created</th>
                         <th>Actions</th>
                     </tr>
@@ -886,32 +888,64 @@ function displayResults(results) {
                             <span class="badge bg-secondary">{{ compilation.video_count }} videos</span>
                         </td>
                         <td>
-                            {% if compilation.status == 'published' %}
-                                <span class="status-badge bg-success">Ready to upload</span>
-                            {% elif compilation.status == 'not_published' %}
-                                <span class="status-badge bg-warning text-dark">Generated</span>
+                            <!-- Compilation Type Badge -->
+                            <div class="mb-2">
+                                {% if compilation.compilation_type == 'live' %}
+                                <span class="badge bg-danger"><i class="bi bi-broadcast"></i> Live</span>
+                                {% else %}
+                                <span class="badge bg-primary"><i class="bi bi-collection"></i> Default</span>
+                                {% endif %}
+                            </div>
+                            <!-- Status Badge -->
+                            {% if compilation.status == 'uploaded' %}
+                                <span class="status-badge bg-success"><i class="bi bi-cloud-upload"></i> Uploaded</span>
+                            {% elif compilation.status == 'ready' %}
+                                <span class="status-badge bg-info"><i class="bi bi-check-circle"></i> Ready</span>
+                            {% elif compilation.status == 'to_do' %}
+                                <span class="status-badge bg-warning text-dark"><i class="bi bi-list-task"></i> To Do</span>
+                            {% elif compilation.status == 'generated' %}
+                                <span class="status-badge bg-secondary"><i class="bi bi-gear"></i> Generated</span>
                             {% else %}
-                                <span class="status-badge bg-secondary">Draft</span>
+                                <span class="status-badge bg-secondary">{{ compilation.status|title }}</span>
                             {% endif %}
+                        </td>
+                        <td>
+                            <span class="badge bg-light text-dark">
+                                {{ compilation.done_by if compilation.done_by else 'TBD' }}
+                            </span>
                         </td>
                         <td>
                             <small>{{ compilation.created_at.strftime('%Y-%m-%d %H:%M') if compilation.created_at else 'Unknown' }}</small>
                         </td>
                         <td>
                             <div class="btn-group btn-group-sm">
-                                <a href="/compilation-preview/{{ compilation._id }}" class="btn btn-outline-primary">
-                                    <i class="bi bi-eye"></i>
+                                <!-- Always show View button -->
+                                <a href="/compilation-preview/{{ compilation._id }}" class="btn btn-outline-primary" title="View Details">
+                                    <i class="bi bi-eye"></i> View
                                 </a>
-                                {% if compilation.status != 'published' %}
-                                <button class="btn btn-outline-success" onclick="publishCompilation('{{ compilation._id }}')">
-                                    <i class="bi bi-cloud-upload"></i>
+
+                                <!-- Status-specific action button -->
+                                {% if compilation.status == 'generated' %}
+                                <button class="btn btn-warning" onclick="changeCompilationStatus('{{ compilation._id }}', 'to_do')" title="Mark as To Do">
+                                    <i class="bi bi-arrow-right"></i> To Do
                                 </button>
+                                {% elif compilation.status == 'to_do' %}
+                                <button class="btn btn-info" onclick="changeCompilationStatus('{{ compilation._id }}', 'ready')" title="Mark as Ready">
+                                    <i class="bi bi-check-lg"></i> Ready
+                                </button>
+                                {% elif compilation.status == 'ready' %}
+                                <button class="btn btn-success" onclick="changeCompilationStatus('{{ compilation._id }}', 'uploaded')" title="Mark as Uploaded">
+                                    <i class="bi bi-cloud-upload"></i> Upload
+                                </button>
+                                {% elif compilation.status == 'uploaded' %}
+                                <span class="badge bg-success btn-sm disabled" style="padding: 0.375rem 0.75rem;">
+                                    <i class="bi bi-check-all"></i> Completed
+                                </span>
                                 {% endif %}
-                                <button class="btn btn-outline-info" onclick="exportCompilation('{{ compilation._id }}')">
-                                    <i class="bi bi-download"></i>
-                                </button>
-                                <button class="btn btn-outline-danger" onclick="deleteCompilation('{{ compilation._id }}')">
-                                    <i class="bi bi-trash"></i>
+
+                                <!-- Delete button (always show) -->
+                                <button class="btn btn-outline-danger" onclick="deleteCompilation('{{ compilation._id }}')" title="Delete">
+                                    <i class="bi bi-trash"></i> Delete
                                 </button>
                             </div>
                         </td>
@@ -945,29 +979,68 @@ function displayResults(results) {
 
 {% block extra_js %}
 <script>
-function publishCompilation(compilationId) {
-    if (confirm('Are you sure you want to mark this compilation as Ready?')) {
-        fetch(`/api/compilation/${compilationId}/publish`, {
-            method: 'POST'
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                showAlert('Compilation published successfully', 'success');
-                location.reload();
-            } else {
-                showAlert(`Publishing failed: ${data.error}`, 'danger');
-            }
-        })
-        .catch(error => {
-            showAlert('Publishing request failed', 'danger');
-        });
+function changeCompilationStatus(compilationId, newStatus) {
+    let doneByName = null;
+
+    // If changing to "ready" status, ask for the person who did it
+    if (newStatus === 'ready') {
+        doneByName = prompt('Who completed this compilation? Please enter the name:');
+        if (doneByName === null) {
+            // User cancelled
+            return;
+        }
+        if (doneByName.trim() === '') {
+            showAlert('Please enter a valid name', 'warning');
+            return;
+        }
+        doneByName = doneByName.trim();
     }
+
+    if (!confirm('Are you sure you want to change the compilation status?')) {
+        return;
+    }
+
+    const requestBody = {
+        compilation_id: compilationId,
+        status: newStatus
+    };
+
+    // Include the done_by name if provided
+    if (doneByName) {
+        requestBody.done_by = doneByName;
+    }
+
+    fetch('/api/compilation-status', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            const message = doneByName
+                ? `Compilation marked as ready by ${doneByName}`
+                : 'Compilation status updated successfully';
+            showAlert(message, 'success');
+            // Reload the page to show updated status
+            setTimeout(() => {
+                location.reload();
+            }, 1000);
+        } else {
+            showAlert('Failed to update status: ' + (data.error || 'Unknown error'), 'danger');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showAlert('Network error: ' + error.message, 'danger');
+    });
 }
 
 function exportCompilation(compilationId) {
     showLoading(true);
-    
+
     fetch(`/api/compilation/${compilationId}/export`, {
         method: 'POST'
     })
@@ -1006,6 +1079,27 @@ function deleteCompilation(compilationId) {
             showAlert('Deletion request failed', 'danger');
         });
     }
+}
+
+function showAlert(message, type) {
+    // Create alert element
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+    alertDiv.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+    alertDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+
+    // Add to page
+    document.body.appendChild(alertDiv);
+
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        if (alertDiv.parentNode) {
+            alertDiv.remove();
+        }
+    }, 5000);
 }
 </script>
 {% endblock %}

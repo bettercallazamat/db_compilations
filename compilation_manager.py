@@ -77,7 +77,7 @@ class CompilationManager:
         Returns: dict with processing result
         """
         compilation_data = CompilationParser.extract_compilation_data(
-            video_doc)
+            video_doc, self.videos_collection)
 
         if not compilation_data:
             return {'action': 'skipped', 'reason': 'not_a_compilation'}

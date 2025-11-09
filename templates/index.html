@@ -188,9 +188,9 @@
 
           <!-- Retention -->
           <td>
-            {% set retention = videos_collection.find_one({'video_id': video.video_id}).retention_30s|default(0) %}
+            {% set retention = video.retention_30s|default(0) %}
             <div class="retention-bar mb-1">
-              <div class="retention-fill 
+              <div class="retention-fill
                                 {% if retention >= 70 %}retention-high
                                 {% elif retention >= 50 %}retention-medium
                                 {% else %}retention-low{% endif %}" style="width: {{ retention }}%">

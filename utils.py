@@ -3,7 +3,7 @@ import argparse
 from datetime import datetime
 from pymongo import MongoClient
 from compilation_manager import CompilationManager
-from compilation_parser import CompilationParser
+from compilation_parser import CompilationParser, VideoUsageTracker
 from db_schema import initialize_database
 
 

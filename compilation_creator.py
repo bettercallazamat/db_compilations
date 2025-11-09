@@ -6,10 +6,11 @@ from enum import Enum
 
 
 class CompilationStatus(Enum):
-    """Enumeration for compilation publication status"""
-    DRAFT = "draft"
-    NOT_PUBLISHED = "not_published"
-    PUBLISHED = "published"
+    """Enumeration for compilation workflow status"""
+    GENERATED = "generated"    # Initial status when created
+    TO_DO = "to_do"           # User can change from Generated
+    READY = "ready"           # User can change from TO DO
+    UPLOADED = "uploaded"     # User can change from Ready
 
 
 class VideoCategory(Enum):
@@ -68,15 +69,17 @@ class CompilationCreator:
 
         return sorted(durations)
 
-    def categorize_videos_by_retention(self, videos: List[Dict], from_date: Optional[str] = None) -> Dict[VideoCategory, List[Dict]]:
+    def categorize_videos_by_retention(self, videos: List[Dict], from_date: Optional[str] = None,
+                                      to_date: Optional[str] = None) -> Dict[VideoCategory, List[Dict]]:
         """
         Categorize videos into retention rate percentiles with sophisticated filtering
         and sorting algorithms to ensure optimal video selection.
-        
+
         Args:
             videos: List of video documents from database
-            from_date: Optional date filter in 'YYYY-MM-DD' format
-            
+            from_date: Optional start date filter in 'YYYY-MM-DD' format
+            to_date: Optional end date filter in 'YYYY-MM-DD' format
+
         Returns:
             Dict mapping video categories to sorted lists of videos
         """
@@ -122,17 +125,41 @@ class CompilationCreator:
                 filter_stats['filtered_duration'] += 1
                 continue
 
-            # Apply date filter if specified
-            if from_date:
+            # Apply date range filter if specified
+            if from_date or to_date:
                 try:
-                    video_date = datetime.strptime(
-                        video.get('published_at', ''), '%Y-%m-%d')
-                    filter_date = datetime.strptime(from_date, '%Y-%m-%d')
-                    if video_date < filter_date:
+                    video_published = video.get('published_at', '')
+                    if not video_published:
                         filter_stats['filtered_date'] += 1
                         continue
-                except (ValueError, TypeError):
-                    filter_stats['filtered_date'] += 1
+
+                    # Handle different date formats in database
+                    # Database may have: "2025-07-05T11:53:31Z" or "2025-07-05"
+                    if 'T' in video_published:
+                        # Full ISO 8601 format: extract date part
+                        video_date = datetime.fromisoformat(video_published.replace('Z', '+00:00')).date()
+                    else:
+                        # Just date format
+                        video_date = datetime.strptime(video_published, '%Y-%m-%d').date()
+
+                    # Handle from_date (start of range)
+                    if from_date:
+                        from_date_obj = datetime.strptime(from_date, '%Y-%m-%d').date()
+                        if video_date < from_date_obj:
+                            filter_stats['filtered_date'] += 1
+                            continue
+
+                    # Handle to_date (end of range)
+                    if to_date:
+                        to_date_obj = datetime.strptime(to_date, '%Y-%m-%d').date()
+                        # Include the end date by going to end of day
+                        if video_date > to_date_obj:
+                            filter_stats['filtered_date'] += 1
+                            continue
+
+                except (ValueError, TypeError) as e:
+                    # If date parsing fails, include the video rather than exclude it
+                    # This prevents videos from being lost due to date format issues
                     continue
 
             # Check annual usage limit
@@ -207,6 +234,95 @@ class CompilationCreator:
         }
 
         return categories
+
+    def categorize_videos_for_preview(self, videos: List[Dict], from_date: Optional[str] = None,
+                                      to_date: Optional[str] = None) -> Dict[str, int]:
+        """
+        Categorize videos by retention_30s for preview display only.
+        Returns counts for High (>75%), Good (>50%), Fair (>25%), Low (<25%)
+
+        Args:
+            videos: List of video documents from database
+            from_date: Optional start date filter in 'YYYY-MM-DD' format
+            to_date: Optional end date filter in 'YYYY-MM-DD' format
+
+        Returns:
+            Dict with counts: {'high': count, 'good': count, 'fair': count, 'low': count}
+        """
+        filtered_videos = []
+        current_date = datetime.utcnow()
+
+        for video in videos:
+            # Skip compilation videos
+            if video.get('is_compilation', False):
+                continue
+
+            # Check if video_id exists in compilations collection
+            if self.compilations_collection.find_one({'video_ids': video.get('video_id')}):
+                continue
+
+            # Check video duration constraints (1-5 minutes)
+            video_duration = video.get('duration_seconds', 0)
+            if (video_duration > self.MAX_VIDEO_DURATION_SECONDS or
+                video_duration < self.MIN_VIDEO_DURATION_SECONDS or
+                    video_duration == 0):
+                continue
+
+            # Apply date range filter if specified
+            if from_date or to_date:
+                try:
+                    video_published = video.get('published_at', '')
+                    if not video_published:
+                        continue
+
+                    # Handle different date formats in database
+                    if 'T' in video_published:
+                        video_date = datetime.fromisoformat(video_published.replace('Z', '+00:00')).date()
+                    else:
+                        video_date = datetime.strptime(video_published, '%Y-%m-%d').date()
+
+                    # Handle from_date (start of range)
+                    if from_date:
+                        from_date_obj = datetime.strptime(from_date, '%Y-%m-%d').date()
+                        if video_date < from_date_obj:
+                            continue
+
+                    # Handle to_date (end of range)
+                    if to_date:
+                        to_date_obj = datetime.strptime(to_date, '%Y-%m-%d').date()
+                        if video_date > to_date_obj:
+                            continue
+
+                except (ValueError, TypeError):
+                    continue
+
+            # Check annual usage limit
+            usage_stats = video.get('compilation_usage_stats', {})
+            total_usage = usage_stats.get('total_inclusions', 0)
+            if total_usage >= self.MAX_ANNUAL_USAGE:
+                continue
+
+            # Ensure video has required metrics
+            if not all(key in video for key in ['retention_30s', 'view_count']):
+                continue
+
+            filtered_videos.append(video)
+
+        # Categorize by fixed retention thresholds for preview
+        counts = {'high': 0, 'good': 0, 'fair': 0, 'low': 0}
+
+        for video in filtered_videos:
+            retention_rate = video.get('retention_30s', 0)
+            if retention_rate > 75:
+                counts['high'] += 1
+            elif retention_rate > 50:
+                counts['good'] += 1
+            elif retention_rate > 25:
+                counts['fair'] += 1
+            else:
+                counts['low'] += 1
+
+        return counts
 
     def select_first_video(self, duration_rounded: int, categorized_videos: Dict[VideoCategory, List[Dict]]) -> Optional[Dict]:
         """
@@ -435,18 +551,124 @@ class CompilationCreator:
 
         return selected_videos
 
+    def create_live_compilation_videos(self, target_duration_minutes: int, first_video: Dict,
+                                      categorized_videos: Dict[VideoCategory, List[Dict]]) -> List[Dict]:
+        """
+        Create videos for live compilation with specific retention-based pattern:
+        1st video: retention > 70%
+        2nd video: retention > 40%
+        3rd & 4th videos: retention < 40%
+        This cycle repeats until target duration reached
+
+        Args:
+            target_duration_minutes: Target compilation duration
+            first_video: The first video (should have retention > 70%)
+            categorized_videos: Videos categorized by retention percentiles
+
+        Returns:
+            List of selected videos in the live compilation pattern
+        """
+        # Get all available videos and filter by retention thresholds
+        all_videos = []
+        for category_videos in categorized_videos.values():
+            all_videos.extend(category_videos)
+
+        # Filter videos by retention thresholds
+        high_retention = [v for v in all_videos if v.get('retention_30s', 0) > 70]  # >70%
+        medium_retention = [v for v in all_videos if 40 < v.get('retention_30s', 0) <= 70]  # >40% and <=70%
+        low_retention = [v for v in all_videos if v.get('retention_30s', 0) < 40]  # <40%
+
+        # Remove first video from the pool to avoid duplication
+        first_video_id = first_video.get('video_id')
+        high_retention = [v for v in high_retention if v.get('video_id') != first_video_id]
+
+        # Target duration in seconds
+        target_duration_seconds = target_duration_minutes * 60
+        current_duration = first_video.get('duration_seconds', 0)
+
+        # Start with first video (must have retention > 70%)
+        if first_video.get('retention_30s', 0) <= 70:
+            # Find a replacement first video with retention > 70%
+            replacement = None
+            for video in high_retention:
+                if video.get('video_id') not in {first_video_id}:
+                    replacement = video
+                    break
+            if replacement:
+                first_video = replacement
+                high_retention = [v for v in high_retention if v.get('video_id') != replacement.get('video_id')]
+
+        selected_videos = [first_video]
+        used_video_ids = {first_video.get('video_id')}
+
+        # Live compilation pattern: 1st (>70%) → 2nd (>40%) → 3rd (<40%) → 4th (<40%), repeating
+        pattern = [
+            ('high', high_retention),      # >70%
+            ('medium', medium_retention),  # >40%
+            ('low', low_retention),        # <40%
+            ('low', low_retention)         # <40%
+        ]
+
+        current_pattern_index = 0  # Start after first (which is high retention)
+
+        while current_duration < target_duration_seconds:
+            pattern_type, video_pool = pattern[current_pattern_index % len(pattern)]
+
+            # Find a video from the pool that hasn't been used
+            selected_video = None
+            for video in video_pool:
+                if video.get('video_id') not in used_video_ids:
+                    video_duration = video.get('duration_seconds', 0)
+                    # Check if adding this video would exceed the target by more than 60 seconds
+                    if current_duration + video_duration <= target_duration_seconds + 60:
+                        selected_video = video
+                        break
+
+            if not selected_video:
+                # If we can't find a suitable video in the current pattern, try to find any unused video
+                all_remaining = []
+                for pool in [high_retention, medium_retention, low_retention]:
+                    all_remaining.extend([v for v in pool if v.get('video_id') not in used_video_ids])
+
+                if not all_remaining:
+                    break  # No more videos available
+
+                # Pick the shortest video that fits
+                all_remaining.sort(key=lambda v: v.get('duration_seconds', float('inf')))
+                selected_video = None
+                for video in all_remaining:
+                    if current_duration + video.get('duration_seconds', 0) <= target_duration_seconds + 60:
+                        selected_video = video
+                        break
+
+                if not selected_video:
+                    break  # No video fits the duration
+
+            # Add the selected video
+            selected_videos.append(selected_video)
+            used_video_ids.add(selected_video.get('video_id'))
+            current_duration += selected_video.get('duration_seconds', 0) + 2  # +2 for transitions
+
+            current_pattern_index += 1
+
+        return selected_videos
+
     def create_compilation(self, duration_minutes: int, from_date: Optional[str] = None,
-                           title_prefix: str = "Auto-Generated", user_id: str = "system") -> Dict:
+                           to_date: Optional[str] = None, title_prefix: str = "Auto-Generated",
+                           user_id: str = "system", compilation_type: str = "default", return_compilation_doc: bool = False) -> Dict:
         """
         Create a new compilation with sophisticated video selection and metadata generation.
         This is the main entry point for compilation creation.
-        
+
         Args:
             duration_minutes: Target duration in minutes (will be rounded to nearest 5)
-            from_date: Optional date filter for video selection
+            from_date: Optional start date filter in 'YYYY-MM-DD' format
+            to_date: Optional end date filter in 'YYYY-MM-DD' format
             title_prefix: Prefix for the generated compilation title
             user_id: ID of the user creating the compilation
-            
+            compilation_type: Type of compilation ('default' or 'live')
+            return_compilation_doc: If True, return the full compilation document instead of summary
+
         Returns:
             Dictionary containing creation results and compilation metadata
         """
@@ -467,7 +689,7 @@ class CompilationCreator:
 
         # Categorize videos by retention rate with date filtering
         categorized_videos = self.categorize_videos_by_retention(
-            all_videos, from_date)
+            all_videos, from_date, to_date)
 
         # Check if any videos are available after filtering
         total_available = sum(len(videos)
@@ -489,9 +711,15 @@ class CompilationCreator:
                 'compilation_id': None
             }
 
-        # Select additional videos to fill the compilation
-        selected_videos = self.select_additional_videos(
-            duration_rounded, first_video, categorized_videos)
+        # Check if this is a live compilation
+        if compilation_type == 'live':
+            # Use live compilation selection algorithm
+            selected_videos = self.create_live_compilation_videos(
+                duration_rounded, first_video, categorized_videos)
+        else:
+            # Select additional videos to fill the compilation
+            selected_videos = self.select_additional_videos(
+                duration_rounded, first_video, categorized_videos)
 
         if len(selected_videos) < 2:
             return {
@@ -507,7 +735,7 @@ class CompilationCreator:
         # Generate compilation metadata
         compilation_doc = self._generate_compilation_document(
             selected_videos, duration_rounded, actual_duration_seconds,
-            title_prefix, user_id, from_date
+            title_prefix, user_id, from_date, compilation_type
         )
 
         # Save to database
@@ -515,6 +743,15 @@ class CompilationCreator:
             result = self.user_compilations_collection.insert_one(
                 compilation_doc)
             compilation_id = str(result.inserted_id)
+
+            # If return_compilation_doc is True, return the full document
+            if return_compilation_doc:
+                compilation_doc['_id'] = result.inserted_id
+                return {
+                    'success': True,
+                    'compilation_doc': compilation_doc,
+                    'compilation_id': compilation_id
+                }
 
             return {
                 'success': True,
@@ -536,7 +773,7 @@ class CompilationCreator:
 
     def _generate_compilation_document(self, selected_videos: List[Dict], duration_rounded: int,
                                        actual_duration_seconds: int, title_prefix: str,
-                                       user_id: str, from_date: Optional[str]) -> Dict:
+                                       user_id: str, from_date: Optional[str], compilation_type: str = "default") -> Dict:
         """
         Generate comprehensive compilation document with all necessary metadata
         """
@@ -570,7 +807,7 @@ class CompilationCreator:
 
         # Generate intelligent title
         compilation_title = self._generate_compilation_title(
-            selected_videos, title_prefix, duration_rounded)
+            selected_videos, title_prefix, duration_rounded, compilation_type)
 
         # Calculate compilation metrics
         avg_retention = sum(v.get('retention_30s', 0)
@@ -580,9 +817,11 @@ class CompilationCreator:
 
         compilation_doc = {
             'title': compilation_title,
+            'compilation_type': compilation_type,
             'duration_rounded': duration_rounded,
             'actual_duration_seconds': actual_duration_seconds,
-            'status': CompilationStatus.NOT_PUBLISHED.value,
+            'status': CompilationStatus.GENERATED.value,
+            'done_by': 'TBD',  # Default value for new compilations
             'created_by': user_id,
             'created_at': datetime.utcnow(),
             'updated_at': datetime.utcnow(),
@@ -610,33 +849,39 @@ class CompilationCreator:
 
         return compilation_doc
 
-    def _generate_compilation_title(self, videos: List[Dict], prefix: str, duration: int) -> str:
-        """Generate intelligent compilation title based on content analysis"""
-        # Analyze common themes in video titles
-        all_words = []
-        for video in videos:
-            title_words = video.get('title', '').lower().split()
-            all_words.extend(title_words)
-
-        # Find most common meaningful words (exclude common words)
-        common_stopwords = {'the', 'a', 'an', 'and', 'or', 'but',
-                            'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'}
-        meaningful_words = [word for word in all_words if len(
-            word) > 2 and word not in common_stopwords]
-
-        word_counts = {}
-        for word in meaningful_words:
-            word_counts[word] = word_counts.get(word, 0) + 1
-
-        # Get top themes
-        top_words = sorted(word_counts.items(),
-                           key=lambda x: x[1], reverse=True)[:3]
-
-        if top_words:
-            theme = ' '.join([word[0].capitalize() for word in top_words])
-            return f"{prefix} - {theme} Collection ({duration} min)"
-        else:
+    def _generate_compilation_title(self, videos: List[Dict], prefix: str, duration: int, compilation_type: str = "default") -> str:
+        """Generate compilation title based on compilation type"""
+        if not videos:
             return f"{prefix} - Compilation ({duration} min) - {datetime.now().strftime('%Y%m%d')}"
+
+        # Remove existing suffixes to avoid duplication
+        suffixes_to_remove = [
+            " | Mega Compilation | D Billions Kids Songs",
+            " | D Billions Kids Songs"
+        ]
+
+        if compilation_type == 'live':
+            # For Live compilations: "Live" + names of two first videos without ending " | D Billions Kids Songs"
+            first_video_title = videos[0].get('title', 'Untitled Video')
+            second_video_title = videos[1].get('title', 'Untitled Video') if len(videos) > 1 else 'Video'
+
+            # Clean titles
+            for suffix in suffixes_to_remove:
+                if first_video_title.endswith(suffix):
+                    first_video_title = first_video_title[:-len(suffix)]
+                if second_video_title.endswith(suffix):
+                    second_video_title = second_video_title[:-len(suffix)]
+
+            return f"Live | {first_video_title} | {second_video_title}"
+        else:
+            # Default compilation logic: first video title + suffix
+            first_video_title = videos[0].get('title', 'Untitled Video')
+
+            for suffix in suffixes_to_remove:
+                if first_video_title.endswith(suffix):
+                    first_video_title = first_video_title[:-len(suffix)]
+
+            return f"{first_video_title} | Mega Compilation | D Billions Kids Songs"
 
     def _analyze_category_usage(self, selected_videos: List[Dict],
                                 categorized_videos: Dict[VideoCategory, List[Dict]]) -> Dict:
@@ -743,18 +988,44 @@ class CompilationCreator:
         except Exception as e:
             return None
 
-    def update_compilation_status(self, compilation_id: str, new_status: CompilationStatus) -> bool:
-        """Update the publication status of a compilation"""
+    def update_compilation_status(self, compilation_id: str, new_status: CompilationStatus, done_by: Optional[str] = None) -> bool:
+        """Update the status of a compilation with workflow validation"""
         try:
+            # Get current compilation to validate status transition
+            compilation = self.user_compilations_collection.find_one({
+                '_id': ObjectId(compilation_id)
+            })
+
+            if not compilation:
+                return False
+
+            current_status = compilation.get('status')
+
+            # Validate status transitions
+            valid_transitions = {
+                CompilationStatus.GENERATED.value: [CompilationStatus.TO_DO.value],
+                CompilationStatus.TO_DO.value: [CompilationStatus.READY.value],
+                CompilationStatus.READY.value: [CompilationStatus.UPLOADED.value],
+                CompilationStatus.UPLOADED.value: []  # Final state
+            }
+
+            if new_status.value not in valid_transitions.get(current_status, []):
+                return False
+
+            # Prepare update fields
+            update_fields = {
+                'status': new_status.value,
+                'updated_at': datetime.utcnow()
+            }
+
+            # If changing to "ready" status and done_by is provided, set the done_by field
+            if new_status == CompilationStatus.READY and done_by:
+                update_fields['done_by'] = done_by
+
+            # Update the status
             result = self.user_compilations_collection.update_one(
                 {'_id': ObjectId(compilation_id)},
-                {
-                    '$set': {
-                        'status': new_status.value,
-                        'updated_at': datetime.utcnow(),
-                        'published_at': datetime.utcnow() if new_status == CompilationStatus.PUBLISHED else None
-                    }
-                }
+                {'$set': update_fields}
             )
             return result.modified_count > 0
         except Exception as e:

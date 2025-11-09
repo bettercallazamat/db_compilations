@@ -1,7 +1,7 @@
 from enum import Enum
 import math
 from typing import List, Dict, Tuple, Optional
-from flask import Flask, render_template, request, jsonify, redirect, url_for, send_file, Blueprint, current_app
+from flask import Flask, render_template, request, jsonify, redirect, url_for, send_file, Blueprint, current_app, session
 from flask_pymongo import PyMongo
 from bson.objectid import ObjectId
 import json
@@ -19,8 +19,14 @@ from frontend_manager import FrontendTemplateManager
 
 app = Flask(__name__)
 
-# MongoDB Configuration
+# Flask configuration
 app.config["MONGO_URI"] = "mongodb://localhost:27017/video_database"
+app.config["SECRET_KEY"] = "your-secret-key-change-in-production"
+
+# Session timeout (60 minutes)
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=60)
+
+# Initialize extensions
 mongo = PyMongo(app)
 
 # Collection references
@@ -37,6 +43,72 @@ compilation_manager = CompilationManager(
 compilation_creator = CompilationCreator(videos_collection, compilations_collection, user_compilations_collection)
 compilation_exporter = CompilationExporter(user_compilations_collection, videos_collection)
 frontend_manager = FrontendTemplateManager()
+
+
+# ==================== AUTHENTICATION SYSTEM ====================
+
+def login_required(f):
+    """Decorator to require authentication for protected routes"""
+    from functools import wraps
+
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # Check if user is logged in
+        if 'logged_in' not in session or not session.get('logged_in'):
+            return redirect(url_for('login'))
+
+        # Check if session has expired
+        last_activity = session.get('last_activity')
+        if last_activity:
+            # Check if more than 60 minutes have passed
+            if datetime.now() - datetime.fromisoformat(last_activity) > timedelta(minutes=60):
+                # Session expired, clear session and redirect to login
+                session.clear()
+                return redirect(url_for('login', expired=True))
+
+        # Update last activity time
+        session['last_activity'] = datetime.now().isoformat()
+
+        return f(*args, **kwargs)
+
+    return decorated_function
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """Login page with simple authentication"""
+    error = None
+
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+
+        # Simple authentication: username="admin", password="135792468"
+        if username == 'admin' and password == '135792468':
+            # Set session
+            session.permanent = True  # Use permanent session
+            session['logged_in'] = True
+            session['username'] = 'admin'
+            session['last_activity'] = datetime.now().isoformat()
+
+            # Redirect to the page user was trying to access or home
+            next_url = request.args.get('next')
+            if next_url and next_url.startswith('/'):
+                return redirect(next_url)
+            else:
+                return redirect(url_for('index'))
+        else:
+            error = "Invalid username or password"
+
+    return render_template('login.html', error=error)
+
+
+@app.route('/logout')
+@login_required
+def logout():
+    """Logout and clear session"""
+    session.clear()
+    return redirect(url_for('login', logged_out=True))
 
 
 class VideoManager:
@@ -283,6 +355,7 @@ class VideoManager:
 # ==================== ENHANCED ORIGINAL ROUTES ====================
 
 @app.route('/')
+@login_required
 def index():
     """Enhanced main page with improved filtering and compilation insights"""
     page = request.args.get('page', 1, type=int)
@@ -294,13 +367,22 @@ def index():
     compilation_filter = request.args.get('compilation')
     retention_filter = request.args.get('retention')  # New filter
     
-    # Build sophisticated MongoDB query with performance optimizations
+    # Build precise search query focused on titles
     query = {}
     if search_query:
+        # Escape special regex characters for safe searching
+        import re
+        escaped_query = re.escape(search_query.strip())
+
+        # Search primarily in title (most relevant for users)
+        # and optionally in video ID (for power users)
         query['$or'] = [
-            {'title': {'$regex': search_query, '$options': 'i'}},
-            {'description': {'$regex': search_query, '$options': 'i'}},
-            {'tags': {'$in': [search_query]}}  # Enhanced search
+            # Exact word match in title (case insensitive)
+            {'title': {'$regex': f'\\b{escaped_query}\\b', '$options': 'i'}},
+            # Title contains search term (case insensitive)
+            {'title': {'$regex': escaped_query, '$options': 'i'}},
+            # Video ID exact match (for specific video searches)
+            {'video_id': {'$regex': escaped_query, '$options': 'i'}},
         ]
 
     if actor_filter == 'true':
@@ -313,14 +395,14 @@ def index():
     elif compilation_filter == 'false':
         query['is_compilation'] = False
     
-    # New retention rate filtering
+    # Retention rate filtering using retention_30s field
     if retention_filter:
         if retention_filter == 'high':
-            query['average_view_percentage'] = {'$gte': 70}
+            query['retention_30s'] = {'$gte': 70}
         elif retention_filter == 'medium':
-            query['average_view_percentage'] = {'$gte': 50, '$lt': 70}
+            query['retention_30s'] = {'$gte': 50, '$lt': 70}
         elif retention_filter == 'low':
-            query['average_view_percentage'] = {'$lt': 50}
+            query['retention_30s'] = {'$lt': 50}
 
     # Get total count with optimized aggregation
     total = videos_collection.count_documents(query)
@@ -330,6 +412,7 @@ def index():
         'title': 1, 'video_id': 1, 'published_at': 1, 'thumbnail_url': 1,
         'duration_seconds': 1, 'view_count': 1, 'like_count': 1,
         'average_view_percentage': 1, 'is_compilation': 1, 'actor': 1,
+        'description': 1, 'tags': 1, 'retention_30s': 1,
         'user_compilation_usage': 1, 'compilation_usage_stats': 1
     })
     .sort('published_at', -1)
@@ -345,7 +428,7 @@ def index():
     quick_stats = {
         'total_videos': total,
         'compilations': videos_collection.count_documents({'is_compilation': True}),
-        'high_retention': videos_collection.count_documents({'average_view_percentage': {'$gte': 70}}),
+        'high_retention': videos_collection.count_documents({'retention_30s': {'$gte': 70}}),
         'user_compilations': user_compilations_collection.count_documents({})
     }
 
@@ -361,11 +444,11 @@ def index():
                            retention_filter=retention_filter,
                            quick_stats=quick_stats,
                            total=total,
-                           videos_collection=videos_collection,
                            now=datetime.now())
 
 
 @app.route('/video_detail/<video_id>')
+@login_required
 def video_detail(video_id):
     try:
         # Get video from database
@@ -374,11 +457,61 @@ def video_detail(video_id):
         if not video:
             return "Video not found", 404
 
-        # Get compilation data if it's a compilation
+        # Get compilation data if this video IS a compilation
         compilation_data = None
         if video.get('is_compilation'):
             compilation_data = compilations_collection.find_one(
                 {'video_id': video_id})
+
+        # Get compilations that include this video
+        auto_compilations = list(compilations_collection.find({
+            'timestamps.video_id': video_id
+        }))
+
+        user_compilations = list(user_compilations_collection.find({
+            'timestamps.video_id': video_id
+        }))
+
+        # Get detailed info for each compilation
+        auto_compilation_details = []
+        for comp in auto_compilations:
+            # Find this video's position in the compilation
+            position = 1
+            first_video = False
+            for i, ts in enumerate(comp.get('timestamps', [])):
+                if ts.get('video_id') == video_id:
+                    position = i + 1
+                    first_video = (i == 0)
+                    break
+
+            auto_compilation_details.append({
+                'title': comp.get('title', 'Untitled'),
+                'video_id': comp.get('video_id', ''),
+                'duration_rounded': comp.get('duration_rounded', 0),
+                'position': position,
+                'is_first_video': first_video,
+                'created_at': comp.get('created_at')
+            })
+
+        user_compilation_details = []
+        for comp in user_compilations:
+            # Find this video's position in the compilation
+            position = 1
+            first_video = False
+            for i, ts in enumerate(comp.get('timestamps', [])):
+                if ts.get('video_id') == video_id:
+                    position = i + 1
+                    first_video = (i == 0)
+                    break
+
+            user_compilation_details.append({
+                'title': comp.get('title', 'Untitled'),
+                'video_id': comp.get('video_id', ''),
+                'duration_rounded': comp.get('duration_rounded', 0),
+                'position': position,
+                'is_first_video': first_video,
+                'created_at': comp.get('created_at')
+            })
 
         # Convert ObjectId to string for template
         if video.get('_id'):
@@ -387,6 +520,8 @@ def video_detail(video_id):
         return render_template('video_detail.html',
                                video=video,
                                compilation_data=compilation_data,
+                               auto_compilations=auto_compilation_details,
+                               user_compilations=user_compilation_details,
                                now=datetime.now())
 
     except Exception as e:
@@ -394,6 +529,7 @@ def video_detail(video_id):
 
 
 @app.route('/compilation_detail/<video_id>')
+@login_required
 def compilation_detail(video_id):
     try:
         # Get compilation from database
@@ -553,6 +689,7 @@ def compilation_detail(video_id):
 
 
 @app.route('/import', methods=['GET', 'POST'])
+@login_required
 def import_data():
     """Import videos from JSON file"""
     if request.method == 'POST':
@@ -593,6 +730,7 @@ def import_data():
 
 
 @app.route('/import-videos', methods=['POST'])
+@login_required
 def import_videos():
     """Enhanced import endpoint that matches the frontend expectations"""
     try:
@@ -678,12 +816,14 @@ def import_videos():
 # ==================== NEW COMPILATION CREATION ROUTES ====================
 
 @app.route('/create-compilation')
+@login_required
 def create_compilation():
     """Advanced compilation creation interface with step-by-step wizard"""
     return render_template('create_compilation.html')
 
 
 @app.route('/api/available-durations')
+@login_required
 def api_available_durations():
     """API endpoint to get available compilation durations with analytics"""
     try:
@@ -721,21 +861,6 @@ def api_available_durations():
             'error': str(e),
             'durations': [5, 10, 15, 20, 25, 30]  # Fallback durations
         })
-
-
-class CompilationStatus(Enum):
-    """Enumeration for compilation publication status"""
-    DRAFT = "draft"
-    NOT_PUBLISHED = "not_published"
-    PUBLISHED = "published"
-
-
-class VideoCategory(Enum):
-    """Video categories based on retention rate percentiles"""
-    TOP_25_PERCENT = "top_25"
-    SECOND_25_PERCENT = "second_25"
-    THIRD_25_PERCENT = "third_25"
-    BOTTOM_25_PERCENT = "bottom_25"
 
 
 class CompilationCreator:
@@ -1345,38 +1470,52 @@ class CompilationCreator:
 
 
 @app.route('/api/create-compilation', methods=['POST'])
+@login_required
 def api_create_compilation():
     """Advanced API endpoint for creating new compilations with comprehensive validation"""
     try:
         data = request.get_json()
         duration = data.get('duration', 10)
+        compilation_type = data.get('compilation_type', 'default')
         from_date = data.get('from_date')
-        title_prefix = data.get('title_prefix', 'Auto-Generated')
+        to_date = data.get('to_date')
         user_id = data.get('user_id', 'system')  # In production, get from session
-        
+
         # Validate input parameters
         if not isinstance(duration, int) or duration < 5 or duration > 120:
             return jsonify({
                 'success': False,
                 'error': 'Duration must be between 5 and 120 minutes'
             })
-        
-        # Validate date format if provided
+
+        # Validate date formats if provided
+        from datetime import datetime
         if from_date:
             try:
                 datetime.strptime(from_date, '%Y-%m-%d')
             except ValueError:
                 return jsonify({
                     'success': False,
-                    'error': 'Invalid date format. Use YYYY-MM-DD'
+                    'error': 'Invalid from_date format. Use YYYY-MM-DD'
                 })
-        
+
+        if to_date:
+            try:
+                datetime.strptime(to_date, '%Y-%m-%d')
+            except ValueError:
+                return jsonify({
+                    'success': False,
+                    'error': 'Invalid to_date format. Use YYYY-MM-DD'
+                })
+
         # Create compilation using advanced algorithm
         result = compilation_creator.create_compilation(
             duration_minutes=duration,
             from_date=from_date,
-            title_prefix=title_prefix,
-            user_id=user_id
+            to_date=to_date,
+            title_prefix='Auto-Generated',  # Fixed title prefix as requested
+            user_id=user_id,
+            compilation_type=compilation_type
         )
         
         if result['success']:
@@ -1424,6 +1563,7 @@ def api_create_compilation():
 
 
 @app.route('/user-compilations')
+@login_required
 def user_compilations():
     """Enhanced user compilations dashboard with comprehensive management features"""
     page = request.args.get('page', 1, type=int)
@@ -1450,17 +1590,21 @@ def user_compilations():
     # Calculate comprehensive statistics
     stats = {
         'total': user_compilations_collection.count_documents({'created_by': user_id}),
-        'published': user_compilations_collection.count_documents({
-            'created_by': user_id, 
-            'status': CompilationStatus.PUBLISHED.value
+        'generated': user_compilations_collection.count_documents({
+            'created_by': user_id,
+            'status': CompilationStatus.GENERATED.value
         }),
-        'not_published': user_compilations_collection.count_documents({
-            'created_by': user_id, 
-            'status': CompilationStatus.NOT_PUBLISHED.value
+        'to_do': user_compilations_collection.count_documents({
+            'created_by': user_id,
+            'status': CompilationStatus.TO_DO.value
         }),
-        'drafts': user_compilations_collection.count_documents({
-            'created_by': user_id, 
-            'status': CompilationStatus.DRAFT.value
+        'ready': user_compilations_collection.count_documents({
+            'created_by': user_id,
+            'status': CompilationStatus.READY.value
+        }),
+        'uploaded': user_compilations_collection.count_documents({
+            'created_by': user_id,
+            'status': CompilationStatus.UPLOADED.value
         }),
         'total_videos': 0,
         'total_duration': 0
@@ -1494,19 +1638,21 @@ def user_compilations():
 
 
 @app.route('/api/compilation-preview', methods=['POST'])
+@login_required
 def api_compilation_preview():
     """Generate intelligent preview of compilation before creation"""
     try:
         data = request.get_json()
         duration = data.get('duration', 10)
         from_date = data.get('from_date')
+        to_date = data.get('to_date')
 
         # Get all available videos for analysis
         all_videos = list(videos_collection.find({}))
 
-        # Categorize videos using the advanced algorithm
+        # Get total available videos using the main categorization for other metrics
         categorized_videos = compilation_creator.categorize_videos_by_retention(
-            all_videos, from_date
+            all_videos, from_date, to_date
         )
 
         # Calculate preview statistics
@@ -1519,12 +1665,12 @@ def api_compilation_preview():
                 'error': 'No videos available with current filters'
             })
 
-        # Calculate quality metrics
+        # Calculate quality metrics from all available videos
         all_available_videos = []
         for category_videos in categorized_videos.values():
             all_available_videos.extend(category_videos)
 
-        avg_retention = sum(v.get('average_view_percentage', 0) for v in all_available_videos) / \
+        avg_retention = sum(v.get('retention_30s', 0) for v in all_available_videos) / \
             len(all_available_videos) if all_available_videos else 0
         avg_views = sum(v.get('view_count', 0) for v in all_available_videos) / \
             len(all_available_videos) if all_available_videos else 0
@@ -1533,6 +1679,53 @@ def api_compilation_preview():
         avg_duration = sum(v.get('duration_seconds', 0) for v in all_available_videos) / \
             len(all_available_videos) if all_available_videos else 180
         estimated_video_count = max(2, int((duration * 60) / avg_duration))
+
+        # Generate actual preview compilation to get the real video selection
+        preview_compilation_result = compilation_creator.create_compilation(
+            duration_minutes=duration,
+            from_date=from_date,
+            to_date=to_date,
+            user_id='preview',
+            return_compilation_doc=True
+        )
+
+        # Analyze the quality distribution of videos actually selected for compilation
+        compilation_counts = {'high': 0, 'good': 0, 'fair': 0, 'low': 0}
+        compilation_retention_sum = 0
+        compilation_views_sum = 0
+
+        if preview_compilation_result and preview_compilation_result.get('success'):
+            compilation_doc = preview_compilation_result.get('compilation_doc')
+            if compilation_doc and 'timestamps' in compilation_doc:
+                # Get details of videos actually selected for the compilation
+                compilation_video_details = []
+                for timestamp_entry in compilation_doc['timestamps']:
+                    video_id = timestamp_entry.get('video_id')
+                    if video_id:
+                        video_detail = videos_collection.find_one({'video_id': video_id})
+                        if video_detail:
+                            compilation_video_details.append(video_detail)
+
+                # Count quality distribution of selected videos
+                for video in compilation_video_details:
+                    retention_rate = video.get('retention_30s', 0)
+                    compilation_retention_sum += retention_rate
+                    compilation_views_sum += video.get('view_count', 0)
+
+                    if retention_rate > 75:
+                        compilation_counts['high'] += 1
+                    elif retention_rate > 50:
+                        compilation_counts['good'] += 1
+                    elif retention_rate > 25:
+                        compilation_counts['fair'] += 1
+                    else:
+                        compilation_counts['low'] += 1
+
+                # Update metrics to use actual compilation video data
+                if compilation_video_details:
+                    avg_retention = compilation_retention_sum / len(compilation_video_details)
+                    avg_views = compilation_views_sum / len(compilation_video_details)
+                    estimated_video_count = len(compilation_video_details)
 
         # Quality score calculation (1-10 scale)
         quality_score = min(10, max(1,
@@ -1553,10 +1746,10 @@ def api_compilation_preview():
             'quality_score': round(quality_score, 1),
             'from_date': from_date,
             'category_counts': {
-                'top_25': len(categorized_videos.get(VideoCategory.TOP_25_PERCENT, [])),
-                'second_25': len(categorized_videos.get(VideoCategory.SECOND_25_PERCENT, [])),
-                'third_25': len(categorized_videos.get(VideoCategory.THIRD_25_PERCENT, [])),
-                'bottom_25': len(categorized_videos.get(VideoCategory.BOTTOM_25_PERCENT, []))
+                'top_25': compilation_counts['high'],    # High: >75%
+                'second_25': compilation_counts['good'],  # Good: >50%
+                'third_25': compilation_counts['fair'],   # Fair: >25%
+                'bottom_25': compilation_counts['low']    # Low: <25%
             }
         })
 
@@ -1568,6 +1761,7 @@ def api_compilation_preview():
 
 
 @app.route('/compilation-preview/<compilation_id>')
+@login_required
 def compilation_preview(compilation_id):
     """Detailed compilation preview with export options and analytics"""
     try:
@@ -1631,22 +1825,27 @@ def compilation_preview(compilation_id):
 # ==================== COMPILATION EXPORT ROUTES ====================
 
 @app.route('/api/compilation/<compilation_id>/export', methods=['POST'])
+@login_required
 def api_export_compilation(compilation_id):
     """Advanced compilation export with multiple format options"""
     try:
         export_format = request.json.get('format', 'txt') if request.is_json else 'txt'
         include_analytics = request.json.get('include_analytics', True) if request.is_json else True
-        
+
         if export_format == 'json':
             result = compilation_exporter.export_compilation_to_json(compilation_id)
         else:
             result = compilation_exporter.export_compilation_to_txt(
-                compilation_id, 
+                compilation_id,
                 include_analytics=include_analytics
             )
 
+        # Add download URL for frontend compatibility
+        if result.get('success') and result.get('filename'):
+            result['download_url'] = f"/download-export/{result['filename']}"
+
         return jsonify(result)
-        
+
     except Exception as e:
         return jsonify({
             'success': False,
@@ -1655,6 +1854,7 @@ def api_export_compilation(compilation_id):
 
 
 @app.route('/download-export/<filename>')
+@login_required
 def download_export(filename):
     """Secure file download endpoint with validation"""
     try:
@@ -1679,6 +1879,7 @@ def download_export(filename):
 
 
 @app.route('/api/export-history')
+@login_required
 def api_export_history():
     """Get comprehensive export history with analytics"""
     try:
@@ -1701,6 +1902,7 @@ def api_export_history():
 # ==================== COMPILATION STATUS MANAGEMENT ====================
 
 @app.route('/api/compilation/<compilation_id>/publish', methods=['POST'])
+@login_required
 def api_publish_compilation(compilation_id):
     """Publish a compilation with comprehensive validation"""
     try:
@@ -1728,6 +1930,7 @@ def api_publish_compilation(compilation_id):
 
 
 @app.route('/api/compilation/<compilation_id>/delete', methods=['DELETE'])
+@login_required
 def api_delete_compilation(compilation_id):
     """Delete a compilation with safety checks"""
     try:
@@ -1751,9 +1954,66 @@ def api_delete_compilation(compilation_id):
         })
 
 
+@app.route('/api/compilation-status', methods=['POST'])
+@login_required
+def api_change_compilation_status():
+    """Change compilation status with workflow validation"""
+    try:
+        data = request.get_json()
+        compilation_id = data.get('compilation_id')
+        new_status = data.get('status')
+        done_by = data.get('done_by')
+
+        if not compilation_id or not new_status:
+            return jsonify({
+                'success': False,
+                'error': 'Missing compilation_id or status'
+            })
+
+        # Map string status to enum
+        status_mapping = {
+            'generated': CompilationStatus.GENERATED,
+            'to_do': CompilationStatus.TO_DO,
+            'ready': CompilationStatus.READY,
+            'uploaded': CompilationStatus.UPLOADED
+        }
+
+        if new_status not in status_mapping:
+            return jsonify({
+                'success': False,
+                'error': f'Invalid status: {new_status}'
+            })
+
+        # Update the status
+        success = compilation_creator.update_compilation_status(
+            compilation_id, status_mapping[new_status], done_by
+        )
+
+        if success:
+            message = f'Compilation status changed to {new_status}'
+            if done_by and new_status == 'ready':
+                message += f' by {done_by}'
+            return jsonify({
+                'success': True,
+                'message': message
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Status transition not allowed or compilation not found'
+            })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'Status change failed: {str(e)}'
+        })
+
+
 # ==================== ENHANCED ANALYTICS ROUTES ====================
 
 @app.route('/compilation-analytics')
+@login_required
 def compilation_analytics_dashboard():
     """Advanced analytics dashboard for compilation performance and insights"""
     # Get comprehensive compilation statistics
@@ -1783,6 +2043,7 @@ def compilation_analytics_dashboard():
 # ==================== MAINTENANCE AND UTILITY ROUTES ====================
 
 @app.route('/api/cleanup-exports', methods=['POST'])
+@login_required
 def api_cleanup_exports():
     """Clean up old export files to manage storage"""
     try:

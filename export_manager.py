@@ -88,186 +88,27 @@ class CompilationExporter:
                 'file_path': None
             }
 
-    def _generate_txt_content(self, compilation: Dict, include_analytics: False,
+    def _generate_txt_content(self, compilation: Dict, include_analytics: bool,
                               include_metadata: bool) -> str:
         """
-        Generate comprehensive text content for compilation export with detailed
-        formatting, timestamps, video information, and analytical insights.
+        Generate simplified text content with compilation name and video list.
         """
         content_lines = []
 
-        # Header section with compilation overview
-        content_lines.extend([
-            "=" * 80,
-            "COMPILATION EXPORT DOCUMENT",
-            "=" * 80,
-            "",
-            f"Title: {compilation.get('title', 'Untitled Compilation')}",
-            f"Status: {compilation.get('status', 'unknown').upper()}",
-            f"Created: {compilation.get('created_at', 'Unknown').strftime('%Y-%m-%d %H:%M:%S') if isinstance(compilation.get('created_at'), datetime) else compilation.get('created_at', 'Unknown')}",
-            f"Duration: {compilation.get('duration_rounded', 'Unknown')} minutes (target)",
-            f"Actual Duration: {self._format_duration_seconds(compilation.get('actual_duration_seconds', 0))}",
-            f"Video Count: {compilation.get('video_count', 0)} videos",
-            ""
-        ])
-
-        # # Creation metadata section (if requested)
-        # if include_metadata:
-        #     content_lines.extend([
-        #         "-" * 40,
-        #         "CREATION METADATA",
-        #         "-" * 40,
-        #         "",
-        #         f"Created by: {compilation.get('created_by', 'Unknown')}",
-        #         f"Date Filter Applied: {compilation.get('from_date_filter', 'None')}",
-        #         f"Algorithm Version: {compilation.get('metadata', {}).get('creation_algorithm_version', 'Unknown')}",
-        #         ""
-        #     ])
-
-        #     # Selection criteria details
-        #     criteria = compilation.get('metadata', {}).get(
-        #         'selection_criteria', {})
-        #     if criteria:
-        #         content_lines.extend([
-        #             "Selection Algorithm Parameters:",
-        #             f"  • Maximum Annual Usage: {criteria.get('max_annual_usage', 'Unknown')}",
-        #             f"  • Retention Rate Weight: {criteria.get('retention_weight', 'Unknown')}",
-        #             f"  • View Count Weight: {criteria.get('view_count_weight', 'Unknown')}",
-        #             f"  • Freshness Weight: {criteria.get('freshness_weight', 'Unknown')}",
-        #             ""
-        #         ])
-
-        # Analytics overview section (if requested)
-        if include_analytics:
-            metadata = compilation.get('metadata', {})
-            content_lines.extend([
-                "-" * 40,
-                "COMPILATION ANALYTICS",
-                "-" * 40,
-                "",
-                f"Average Retention Rate: {metadata.get('average_retention_rate', 'Unknown')}%",
-                f"Total Original Views: {self._format_number(metadata.get('total_original_views', 0))}",
-                f"Export Count: {compilation.get('export_data', {}).get('export_count', 0)}",
-                ""
-            ])
-
-        # # Video timeline section - the core content
-        # content_lines.extend([
-        #     "=" * 80,
-        #     "VIDEO TIMELINE",
-        #     "=" * 80,
-        #     "",
-        #     "Format: [TIMESTAMP] Video Title",
-        #     "        Duration: XX:XX | Views: XXX,XXX | Retention: XX%",
-        #     "        Video ID: XXXXXXXX",
-        #     "        Description: [First 100 characters...]",
-        #     "",
-        #     "-" * 80,
-        #     ""
-        # ])
+        # First line: compilation name
+        compilation_title = compilation.get('title', 'Untitled Compilation')
+        content_lines.append(compilation_title)
+        content_lines.append("")  # Empty line after title
 
         # Process each video in the timeline
         timestamps = compilation.get('timestamps', [])
-        for i, timestamp_entry in enumerate(timestamps, 1):
-            video_id = timestamp_entry.get('video_id', 'Unknown')
-
-            # Get detailed video information from database
-            video_details = self.videos_collection.find_one(
-                {'video_id': video_id})
-
-            # Format timestamp with proper alignment
+        for timestamp_entry in timestamps:
+            # Format timestamp and title
             timestamp = timestamp_entry.get('timestamp', '0:00')
             title = timestamp_entry.get('title', 'Untitled Video')
 
-            content_lines.append(f"[{timestamp:>8}] {title}")
-
-            if video_details:
-                # Video metrics line
-                duration = self._format_duration_seconds(
-                    video_details.get('duration_seconds', 0))
-                views = self._format_number(video_details.get('view_count', 0))
-                retention = video_details.get('average_view_percentage', 0)
-
-                content_lines.append(
-                    f"             Duration: {duration} | Views: {views} | Retention: {retention}%")
-                content_lines.append(f"             Video ID: {video_id}")
-
-                # Include analytics data if requested
-                if include_analytics:
-                    like_count = self._format_number(
-                        video_details.get('like_count', 0))
-                    comment_count = self._format_number(
-                        video_details.get('comment_count', 0))
-                    published_date = video_details.get(
-                        'published_at', 'Unknown')
-
-                    content_lines.append(
-                        f"             Likes: {like_count} | Comments: {comment_count} | Published: {published_date}")
-
-                    # Usage statistics if available
-                    usage_stats = video_details.get(
-                        'compilation_usage_stats', {})
-                    if usage_stats:
-                        total_usage = usage_stats.get('total_inclusions', 0)
-                        first_video_count = usage_stats.get(
-                            'first_video_count', 0)
-                        content_lines.append(
-                            f"             Compilation Usage: {total_usage} times | As First Video: {first_video_count} times")
-
-                # Video description preview
-                description = video_details.get(
-                    'description', 'No description available')
-                description_preview = description[:100] + \
-                    "..." if len(description) > 100 else description
-                description_preview = description_preview.replace(
-                    '\n', ' ').replace('\r', ' ')
-                content_lines.append(
-                    f"             Description: {description_preview}")
-            else:
-                content_lines.append(f"             Video ID: {video_id}")
-                content_lines.append(
-                    "             [Video details not found in database]")
-
-            content_lines.append("")  # Blank line between videos
-
-        # Summary section
-        content_lines.extend([
-            "=" * 80,
-            "COMPILATION SUMMARY",
-            "=" * 80,
-            "",
-            f"Total Videos: {len(timestamps)}",
-            f"Estimated Total Duration: {self._format_duration_seconds(compilation.get('actual_duration_seconds', 0))}",
-            f"Target Duration: {compilation.get('duration_rounded', 'Unknown')} minutes",
-        ])
-
-        # Video category breakdown (if analytics enabled)
-        if include_analytics and timestamps:
-            content_lines.extend([
-                "",
-                "Video Quality Distribution:",
-                self._generate_quality_breakdown(timestamps)
-            ])
-
-        # Production notes section
-        # content_lines.extend([
-        #     "",
-        #     "-" * 40,
-        #     "PRODUCTION NOTES",
-        #     "-" * 40,
-        #     "",
-        #     "• All timestamps are cumulative from the start of the compilation",
-        #     "• Transition time of 2 seconds is included between videos",
-        #     "• Videos are ordered by algorithmic selection for optimal engagement",
-        #     "• First video selected for highest retention rate to maximize viewer engagement",
-        #     "• Subsequent videos selected using weighted scoring algorithm",
-        #     "",
-        #     "IMPORTANT: Verify all video permissions and licensing before production.",
-        #     "",
-        #     "Export generated on: " + datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        #     "Export format version: 1.0",
-        #     "=" * 80
-        # ])
+            # Add timestamp and video name
+            content_lines.append(f"{timestamp} {title}")
 
         return "\n".join(content_lines)
 
