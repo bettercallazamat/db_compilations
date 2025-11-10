@@ -180,12 +180,18 @@ class VideoManager:
 
             videos = data.get('videos', [])
             imported_count = 0
+            updated_count = 0
             skipped_count = 0
             errors = []
 
             if not videos:
                 return {'error': 'No videos found in the JSON file'}
 
+            print(f"🔄 Starting import of {len(videos)} videos...")
+            print(f"   Options: skip_existing={skip_existing}, update_existing={update_existing}")
+
+            # Collect video data first
+            video_data_dict = {}
             for i, video_data in enumerate(videos):
                 try:
                     # Validation
@@ -201,6 +207,17 @@ class VideoManager:
                         errors.append(f'Video {i+1}: Missing video_id')
                         continue
 
+                    video_data_dict[video_id] = video_data
+
+                except Exception as video_error:
+                    errors.append(f'Video {i+1}: {str(video_error)}')
+                    continue
+
+            print(f"   Validated {len(video_data_dict)} videos for processing")
+
+            # Process videos efficiently
+            for video_id, video_data in video_data_dict.items():
+                try:
                     # Check if video already exists
                     existing = videos_collection.find_one(
                         {'video_id': video_id})
@@ -213,11 +230,16 @@ class VideoManager:
                             # Update existing video
                             update_doc = VideoManager._prepare_video_update(
                                 video_data)
-                            videos_collection.update_one(
+                            result = videos_collection.update_one(
                                 {'video_id': video_id},
                                 {'$set': update_doc}
                             )
-                            imported_count += 1
+                            if result.modified_count > 0:
+                                updated_count += 1
+                                imported_count += 1
+                            continue
+                        else:
+                            skipped_count += 1
                             continue
 
                     # Prepare new video document
@@ -226,36 +248,45 @@ class VideoManager:
                     videos_collection.insert_one(video_doc)
                     imported_count += 1
 
-                    processing_results = compilation_manager.process_all_compilations()
-                    print(f"   ✅ Processing completed:")
-                    print(f"     - Videos processed: {processing_results['processed']}")
-                    print(f"     - New compilations: {processing_results['new_compilations']}")
-                    print(
-                        f"     - Updated compilations: {processing_results['updated_compilations']}")
-                    if processing_results['errors']:
-                        print(
-                            f"     - Errors encountered: {len(processing_results['errors'])}")
-                        for error in processing_results['errors'][:3]:  # Show first 3 errors
-                            print(f"       • {error}")
-
-                    
-
                 except Exception as video_error:
-                    errors.append(f'Video {i+1}: {str(video_error)}')
+                    errors.append(f'Video {video_id}: {str(video_error)}')
                     continue
-            # FOR DEBUG =====================
+
+            print(f"   Import completed:")
+            print(f"     - New videos: {imported_count - updated_count}")
+            print(f"     - Updated videos: {updated_count}")
+            print(f"     - Skipped videos: {skipped_count}")
+            print(f"     - Errors: {len(errors)}")
+
+            # Process all compilations AFTER importing videos
+            print("   🔄 Processing all compilations...")
+            processing_results = compilation_manager.process_all_compilations()
+            print(f"   ✅ Processing completed:")
+            print(f"     - Videos processed: {processing_results['processed']}")
+            print(f"     - New compilations: {processing_results['new_compilations']}")
+            print(f"     - Updated compilations: {processing_results['updated_compilations']}")
+            if processing_results['errors']:
+                print(f"     - Compilation errors: {len(processing_results['errors'])}")
+
+            # Recalculate all statistics comprehensively
+            print("   📊 Recalculating all usage statistics...")
             tracker = VideoUsageTracker(
                 compilations_collection, user_compilations_collection, videos_collection)
-            tracker.recalculate_all_stats()
-
-            # ===============================
+            stats_result = tracker.recalculate_all_stats()
+            print(f"   ✅ Statistics recalculated:")
+            print(f"     - Videos processed: {stats_result.get('videos_processed', 'N/A')}")
+            print(f"     - Compilations processed: {stats_result.get('compilations_processed', 'N/A')}")
+            print(f"     - Statistics updated: {stats_result.get('stats_updated', 'N/A')}")
 
             return {
                 'imported': imported_count,
+                'updated': updated_count,
                 'total': len(videos),
                 'skipped': skipped_count,
+                'processing_results': processing_results,
+                'stats_result': stats_result,
                 # Limit errors to prevent overwhelming the UI
-                'errors': errors[:10]
+                'errors': errors[:20]
             }
 
         except json.JSONDecodeError as e:
@@ -745,10 +776,11 @@ def import_videos():
             return jsonify({'success': False, 'error': 'Please upload a JSON file'}), 400
 
         # Get additional options from form
+        # Default to updating existing videos for comprehensive data refresh
         skip_existing = request.form.get(
-            'skip_existing', 'true').lower() == 'true'
+            'skip_existing', 'false').lower() == 'true'
         update_existing = request.form.get(
-            'update_existing', 'false').lower() == 'true'
+            'update_existing', 'true').lower() == 'true'
         validate_data = request.form.get(
             'validate_data', 'true').lower() == 'true'
 
@@ -775,13 +807,48 @@ def import_videos():
                     'error': result['error']
                 }), 500
             else:
+                # Create detailed success message
+                imported = result.get('imported', 0)
+                updated = result.get('updated', 0)
+                total = result.get('total', 0)
+                skipped = result.get('skipped', 0)
+
+                # Build comprehensive message
+                parts = []
+                if imported > 0:
+                    if updated > 0:
+                        parts.append(f"Updated {updated} existing videos")
+                    new_videos = imported - updated
+                    if new_videos > 0:
+                        parts.append(f"Added {new_videos} new videos")
+                if skipped > 0:
+                    parts.append(f"Skipped {skipped} videos")
+
+                message = f"Successfully processed {total} videos. " + ". ".join(parts) + "."
+
+                # Include processing results if available
+                processing_info = ""
+                if 'processing_results' in result:
+                    pr = result['processing_results']
+                    if pr.get('processed', 0) > 0:
+                        processing_info = f" Processed {pr['processed']} videos across {pr.get('new_compilations', 0)} new and {pr.get('updated_compilations', 0)} updated compilations."
+
                 return jsonify({
                     'success': True,
-                    'imported_count': result['imported'],
-                    'total_count': result['total'],
-                    'skipped_count': result.get('skipped', 0),
+                    'imported_count': imported,
+                    'updated_count': updated,
+                    'total_count': total,
+                    'skipped_count': skipped,
+                    'processing_results': result.get('processing_results', {}),
+                    'stats_result': result.get('stats_result', {}),
                     'errors': result.get('errors', []),
-                    'message': f'Successfully processed {result["total"]} videos. Imported: {result["imported"]}, Skipped: {result.get("skipped", 0)}'
+                    'message': message + processing_info,
+                    'detailed_results': {
+                        'new_videos': imported - updated,
+                        'updated_videos': updated,
+                        'skipped_videos': skipped,
+                        'compilation_updates': result.get('processing_results', {}).get('updated_compilations', 0)
+                    }
                 })
 
         except Exception as e:
@@ -1822,6 +1889,166 @@ def compilation_preview(compilation_id):
         return f"Error loading compilation preview: {str(e)}", 500
 
 
+@app.route('/edit-compilation/<compilation_id>')
+@login_required
+def edit_compilation(compilation_id):
+    """Edit compilation page with video management features"""
+    try:
+        # Get compilation details
+        compilation_details = compilation_creator.get_compilation_preview(compilation_id)
+
+        if not compilation_details:
+            return "Compilation not found", 404
+
+        # Calculate analytics for preview (similar to compilation_preview)
+        timestamps = compilation_details.get('timestamps', [])
+        analytics = None
+
+        if timestamps:
+            retention_rates = []
+            view_counts = []
+
+            for timestamp_entry in timestamps:
+                video_details = videos_collection.find_one({
+                    'video_id': timestamp_entry['video_id']
+                })
+
+                if video_details:
+                    retention_rates.append(video_details.get('retention_30s', 0))
+                    view_counts.append(video_details.get('view_count', 0))
+
+            if retention_rates:
+                analytics = {
+                    'avg_retention': sum(retention_rates) / len(retention_rates),
+                    'total_original_views': sum(view_counts),
+                    'min_retention': min(retention_rates),
+                    'max_retention': max(retention_rates),
+                    'quality_distribution': {
+                        'high': len([r for r in retention_rates if r >= 70]),
+                        'medium': len([r for r in retention_rates if 50 <= r < 70]),
+                        'low': len([r for r in retention_rates if r < 50])
+                    }
+                }
+
+        # Convert ObjectId to string for template
+        if '_id' in compilation_details:
+            compilation_details['_id'] = str(compilation_details['_id'])
+
+        return render_template('edit_compilation.html',
+                               compilation=compilation_details,
+                               compilation_id=compilation_id,
+                               analytics=analytics,
+                               now=datetime.now())
+
+    except Exception as e:
+        print(f"Error in edit_compilation: {str(e)}")
+        return f"Error loading edit page: {str(e)}", 500
+
+
+# ==================== COMPILATION EDIT API ENDPOINTS ====================
+
+@app.route('/api/compilation/<compilation_id>/update', methods=['POST'])
+@login_required
+def api_update_compilation(compilation_id):
+    """Update compilation with new video list"""
+    try:
+        data = request.get_json()
+        new_timestamps = data.get('timestamps', [])
+
+        if not new_timestamps:
+            return jsonify({
+                'success': False,
+                'error': 'No timestamps provided'
+            }), 400
+
+        # Update the compilation
+        result = user_compilations_collection.update_one(
+            {'_id': ObjectId(compilation_id)},
+            {
+                '$set': {
+                    'timestamps': new_timestamps,
+                    'updated_at': datetime.utcnow(),
+                    'video_count': len(new_timestamps)
+                }
+            }
+        )
+
+        if result.matched_count == 0:
+            return jsonify({
+                'success': False,
+                'error': 'Compilation not found'
+            }), 404
+
+        return jsonify({
+            'success': True,
+            'message': 'Compilation updated successfully'
+        })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'Failed to update compilation: {str(e)}'
+        }), 500
+
+
+@app.route('/api/available-videos/<compilation_id>')
+@login_required
+def api_available_videos(compilation_id):
+    """Get list of videos that can be added to compilation"""
+    try:
+        # Get current compilation to exclude already included videos
+        current_compilation = user_compilations_collection.find_one({
+            '_id': ObjectId(compilation_id)
+        })
+
+        if not current_compilation:
+            return jsonify({
+                'success': False,
+                'error': 'Compilation not found'
+            }), 404
+
+        # Get list of video_ids already in compilation
+        existing_video_ids = set()
+        for timestamp in current_compilation.get('timestamps', []):
+            existing_video_ids.add(timestamp.get('video_id'))
+
+        # Get all videos that are not compilations and not already in this compilation
+        query = {
+            'is_compilation': False,
+            'video_id': {'$nin': list(existing_video_ids)}
+        }
+
+        videos = list(videos_collection.find(query)
+                     .sort('published_at', -1)
+                     .limit(50))  # Limit to 50 videos for performance
+
+        # Convert to JSON-serializable format
+        available_videos = []
+        for video in videos:
+            available_videos.append({
+                'video_id': video.get('video_id'),
+                'title': video.get('title', ''),
+                'description': video.get('description', ''),
+                'thumbnail_url': video.get('thumbnail_url', ''),
+                'duration_seconds': video.get('duration_seconds', 0),
+                'view_count': video.get('view_count', 0),
+                'like_count': video.get('like_count', 0),
+                'retention_30s': video.get('retention_30s', 0),
+                'published_at': video.get('published_at', '')
+            })
+
+        return jsonify({
+            'success': True,
+            'videos': available_videos
+        })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'Failed to get available videos: {str(e)}'
+        }), 500
+
+
 # ==================== COMPILATION EXPORT ROUTES ====================
 
 @app.route('/api/compilation/<compilation_id>/export', methods=['POST'])
@@ -2007,6 +2234,41 @@ def api_change_compilation_status():
         return jsonify({
             'success': False,
             'error': f'Status change failed: {str(e)}'
+        })
+
+
+# ==================== REFRESH STATISTICS ROUTES ====================
+
+@app.route('/api/refresh-all-stats', methods=['POST'])
+@login_required
+def api_refresh_all_stats():
+    """Recalculate all compilation statistics and usage data"""
+    try:
+        print("🔄 Starting comprehensive statistics refresh...")
+
+        # Process all compilations
+        print("   📊 Processing all compilations...")
+        processing_results = compilation_manager.process_all_compilations()
+
+        # Recalculate all statistics
+        print("   📈 Recalculating all usage statistics...")
+        tracker = VideoUsageTracker(
+            compilations_collection, user_compilations_collection, videos_collection)
+        stats_result = tracker.recalculate_all_stats()
+
+        print("   ✅ Statistics refresh completed")
+
+        return jsonify({
+            'success': True,
+            'message': 'All statistics have been refreshed successfully',
+            'processing_results': processing_results,
+            'stats_result': stats_result
+        })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'Statistics refresh failed: {str(e)}'
         })
 
 

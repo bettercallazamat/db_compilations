@@ -72,22 +72,29 @@
           <div class="mb-4">
             <h6><i class="fas fa-cog me-2"></i>Import Options</h6>
             <div class="form-check mb-2">
-              <input class="form-check-input" type="checkbox" id="skip-existing" name="skip_existing" checked>
+              <input class="form-check-input" type="checkbox" id="skip-existing" name="skip_existing">
               <label class="form-check-label" for="skip-existing">
-                Skip existing videos (recommended)
+                <strong>Skip existing videos</strong>
+                <small class="d-block text-muted">Don't import videos that already exist</small>
               </label>
             </div>
             <div class="form-check mb-2">
-              <input class="form-check-input" type="checkbox" id="update-existing" name="update_existing">
+              <input class="form-check-input" type="checkbox" id="update-existing" name="update_existing" checked>
               <label class="form-check-label" for="update-existing">
-                Update existing video data
+                <strong>Update existing video data</strong>
+                <small class="d-block text-muted">Refresh statistics and metadata for existing videos (recommended)</small>
               </label>
             </div>
             <div class="form-check">
               <input class="form-check-input" type="checkbox" id="validate-data" name="validate_data" checked>
               <label class="form-check-label" for="validate-data">
-                Validate data before import
+                <strong>Validate data before import</strong>
+                <small class="d-block text-muted">Check for missing or invalid data fields</small>
               </label>
+            </div>
+            <div class="alert alert-info mt-3">
+              <i class="fas fa-info-circle me-2"></i>
+              <strong>Recommended settings:</strong> Enable "Update existing video data" to refresh all statistics when uploading new JSON files.
             </div>
           </div>
 
@@ -396,7 +403,9 @@
         return;
       }
 
-      const successCount = data.imported_count || 0;
+      const importedCount = data.imported_count || 0;
+      const updatedCount = data.updated_count || 0;
+      const newCount = (data.detailed_results && data.detailed_results.new_videos) || (importedCount - updatedCount);
       const totalCount = data.total_count || 0;
       const skippedCount = data.skipped_count || 0;
       const errors = data.errors || [];
@@ -405,14 +414,14 @@
         <div class="row text-center mb-4">
           <div class="col-md-3">
             <div class="p-3">
-              <h3 class="text-success">${successCount}</h3>
-              <small>Videos Imported</small>
+              <h3 class="text-success">${newCount}</h3>
+              <small>New Videos</small>
             </div>
           </div>
           <div class="col-md-3">
             <div class="p-3">
-              <h3 class="text-info">${totalCount}</h3>
-              <small>Total Processed</small>
+              <h3 class="text-info">${updatedCount}</h3>
+              <small>Updated</small>
             </div>
           </div>
           <div class="col-md-3">
@@ -430,11 +439,30 @@
         </div>
       `;
 
-      if (successCount > 0) {
+      if (importedCount > 0) {
+        const details = [];
+        if (newCount > 0) {
+          details.push(`${newCount} new videos added`);
+        }
+        if (updatedCount > 0) {
+          details.push(`${updatedCount} existing videos updated`);
+        }
+
         html += `
           <div class="alert alert-success">
             <i class="fas fa-check-circle me-2"></i>
-            Successfully imported ${successCount} videos!
+            <strong>Import successful!</strong> ${details.join(', ')}.
+          </div>
+        `;
+      }
+
+      // Add compilation processing information
+      if (data.processing_results && data.processing_results.processed > 0) {
+        const pr = data.processing_results;
+        html += `
+          <div class="alert alert-info">
+            <i class="fas fa-project-diagram me-2"></i>
+            <strong>Compilations updated:</strong> Processed ${pr.processed} videos across ${pr.new_compilations || 0} new and ${pr.updated_compilations || 0} updated compilations.
           </div>
         `;
       }
@@ -453,7 +481,7 @@
 
       if (data.message) {
         html += `
-          <div class="alert alert-info">
+          <div class="alert alert-secondary">
             <i class="fas fa-info-circle me-2"></i>
             ${data.message}
           </div>
@@ -462,9 +490,15 @@
 
       html += `
         <div class="text-center">
-          <a href="/" class="btn btn-primary">
-            <i class="fas fa-eye me-2"></i>View Imported Videos
+          <a href="/" class="btn btn-primary me-2">
+            <i class="fas fa-eye me-2"></i>View All Videos
           </a>
+          <a href="/user-compilations" class="btn btn-outline-primary me-2">
+            <i class="fas fa-folder-open me-2"></i>View Compilations
+          </a>
+          <button class="btn btn-secondary" onclick="refreshAllStats(this)">
+            <i class="fas fa-sync me-2"></i>Refresh All Statistics
+          </button>
         </div>
       `;
 
@@ -495,6 +529,40 @@
           alert.remove();
         }
       }, 5000);
+    }
+
+    function refreshAllStats(button) {
+      if (!confirm('This will recalculate all compilation statistics and usage data. This may take a few minutes. Continue?')) {
+        return;
+      }
+
+      const originalText = button.innerHTML;
+      button.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Refreshing...';
+      button.disabled = true;
+
+      fetch('/api/refresh-all-stats', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      })
+      .then(response => response.json())
+      .then(data => {
+        button.innerHTML = originalText;
+        button.disabled = false;
+
+        if (data.success) {
+          showAlert('All statistics have been refreshed successfully!', 'success');
+        } else {
+          showAlert('Failed to refresh statistics: ' + (data.error || 'Unknown error'), 'danger');
+        }
+      })
+      .catch(error => {
+        button.innerHTML = originalText;
+        button.disabled = false;
+        console.error('Error:', error);
+        showAlert('Network error: ' + error.message, 'danger');
+      });
     }
 
     // Load import history on page load

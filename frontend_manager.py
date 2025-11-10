@@ -924,6 +924,11 @@ function displayResults(results) {
                                     <i class="bi bi-eye"></i> View
                                 </a>
 
+                                <!-- Edit button (always show) -->
+                                <a href="/edit-compilation/{{ compilation._id }}" class="btn btn-outline-secondary" title="Edit Compilation">
+                                    <i class="bi bi-pencil"></i> Edit
+                                </a>
+
                                 <!-- Status-specific action button -->
                                 {% if compilation.status == 'generated' %}
                                 <button class="btn btn-warning" onclick="changeCompilationStatus('{{ compilation._id }}', 'to_do')" title="Mark as To Do">

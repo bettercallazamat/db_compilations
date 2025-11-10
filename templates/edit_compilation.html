@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Edit {{ compilation.title }} - Compilation Editor</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    /* Base styles from base.html */
+    body {
+      background-color: #f8f9fa;
+    }
+
+    .navbar-brand {
+      font-weight: bold;
+      font-size: 1.5rem;
+    }
+
+    .nav-link {
+      font-weight: 500;
+      transition: all 0.3s ease;
+    }
+
+    .nav-link:hover {
+      transform: translateY(-1px);
+    }
+
+    .nav-link.active {
+      background-color: rgba(255, 255, 255, 0.1);
+      border-radius: 5px;
+    }
+
+    .main-content {
+      min-height: calc(100vh - 120px);
+      padding-top: 2rem;
+    }
+
+    .card {
+      border: none;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      transition: transform 0.3s ease;
+      border-radius: 10px;
+    }
+
+    .card:hover {
+      transform: translateY(-2px);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border: none;
+      border-radius: 25px;
+      padding: 8px 20px;
+      font-weight: 500;
+    }
+
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%);
+      transform: translateY(-1px);
+    }
+
+    .footer {
+      background-color: #343a40;
+      color: white;
+      padding: 20px 0;
+      margin-top: 3rem;
+    }
+
+    /* Compilation Editor Specific Styles */
+    .preview-hero {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border-radius: 15px;
+      padding: 2rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 4px 20px rgba(102, 126, 234, 0.3);
+    }
+
+    .stats-card {
+      background: white;
+      border-radius: 12px;
+      padding: 1.5rem;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+      border: none;
+      margin-bottom: 1.5rem;
+      transition: transform 0.3s ease;
+    }
+
+    .stats-card:hover {
+      transform: translateY(-2px);
+    }
+
+    .timestamp-card {
+      background: #f8f9fa;
+      border: 1px solid #e9ecef;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-bottom: 0.5rem;
+      transition: all 0.3s ease;
+      position: relative;
+    }
+
+    .timestamp-card:hover {
+      background: #e9ecef;
+      border-color: #667eea;
+      transform: translateX(5px);
+    }
+
+    .timestamp-card.dragging {
+      opacity: 0.5;
+      transform: rotate(2deg);
+    }
+
+    .timestamp-card.drag-over {
+      border-color: #667eea;
+      background: #e7f0ff;
+    }
+
+    .video-controls {
+      position: absolute;
+      right: 1rem;
+      top: 50%;
+      transform: translateY(-50%);
+      display: flex;
+      gap: 0.25rem;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+
+    .timestamp-card:hover .video-controls {
+      opacity: 1;
+    }
+
+    .control-btn {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+      transition: all 0.2s ease;
+    }
+
+    .control-btn:hover {
+      transform: scale(1.1);
+    }
+
+    .btn-move-up {
+      background: #17a2b8;
+      color: white;
+    }
+
+    .btn-move-down {
+      background: #17a2b8;
+      color: white;
+    }
+
+    .btn-delete {
+      background: #dc3545;
+      color: white;
+    }
+
+    .quality-badge {
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 0.25rem 0.5rem;
+      border-radius: 15px;
+    }
+
+    .quality-high {
+      background: #28a745;
+      color: white;
+    }
+
+    .quality-medium {
+      background: #ffc107;
+      color: #333;
+    }
+
+    .quality-low {
+      background: #dc3545;
+      color: white;
+    }
+
+    .analytics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    .metric-card {
+      background: white;
+      border: none;
+      border-radius: 12px;
+      padding: 1.5rem;
+      text-align: center;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      transition: transform 0.3s ease;
+    }
+
+    .metric-card:hover {
+      transform: translateY(-2px);
+    }
+
+    .metric-value {
+      font-size: 2rem;
+      font-weight: bold;
+      color: #667eea;
+      margin-bottom: 0.25rem;
+    }
+
+    .metric-label {
+      color: #6c757d;
+      font-size: 0.875rem;
+      font-weight: 500;
+    }
+
+    .status-badge {
+      font-size: 0.875rem;
+      padding: 0.375rem 0.75rem;
+      border-radius: 20px;
+      font-weight: 600;
+    }
+
+    .status-published {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+
+    .status-not_published {
+      background: #fff3cd;
+      color: #856404;
+      border: 1px solid #ffeaa7;
+    }
+
+    .status-draft {
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+
+    .video-thumbnail {
+      width: 60px;
+      height: 45px;
+      object-fit: cover;
+      border-radius: 6px;
+      border: 2px solid #e9ecef;
+    }
+
+    .retention-bar {
+      width: 100%;
+      height: 6px;
+      background-color: #e9ecef;
+      border-radius: 3px;
+      overflow: hidden;
+      margin-top: 0.5rem;
+    }
+
+    .retention-fill {
+      height: 100%;
+      transition: width 0.3s ease;
+      border-radius: 3px;
+    }
+
+    .retention-high {
+      background: linear-gradient(90deg, #28a745, #20c997);
+    }
+
+    .retention-medium {
+      background: linear-gradient(90deg, #ffc107, #fd7e14);
+    }
+
+    .retention-low {
+      background: linear-gradient(90deg, #dc3545, #e83e8c);
+    }
+
+    .loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+    }
+
+    .loading-content {
+      background: white;
+      padding: 2rem;
+      border-radius: 15px;
+      text-align: center;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    }
+
+    .spinner-border {
+      color: #667eea;
+    }
+
+    .action-buttons .btn {
+      margin-bottom: 0.5rem;
+    }
+
+    .breadcrumb {
+      background: transparent;
+      padding: 0;
+      margin-bottom: 1rem;
+    }
+
+    .breadcrumb-item a {
+      color: #667eea;
+      text-decoration: none;
+    }
+
+    .breadcrumb-item.active {
+      color: #6c757d;
+    }
+
+    .available-videos-modal {
+      max-height: 70vh;
+      overflow-y: auto;
+    }
+
+    .available-video-item {
+      padding: 0.75rem;
+      border-bottom: 1px solid #e9ecef;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+    }
+
+    .available-video-item:hover {
+      background-color: #f8f9fa;
+    }
+
+    .available-video-item.selected {
+      background-color: #e7f0ff;
+    }
+
+    .drop-zone {
+      border: 2px dashed #dee2e6;
+      border-radius: 8px;
+      padding: 2rem;
+      text-align: center;
+      transition: all 0.3s ease;
+    }
+
+    .drop-zone.drag-over {
+      border-color: #667eea;
+      background-color: #e7f0ff;
+    }
+
+    .save-status {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 1000;
+      min-width: 250px;
+    }
+  </style>
+</head>
+
+<body>
+  <!-- Navigation -->
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <div class="container">
+      <a class="navbar-brand" href="/">
+        <i class="fas fa-video me-2"></i>DB Compilations
+      </a>
+
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+
+      <div class="collapse navbar-collapse" id="navbarNav">
+        <ul class="navbar-nav me-auto">
+          <li class="nav-item">
+            <a class="nav-link" href="/">
+              <i class="fas fa-home me-1"></i>Videos
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/create-compilation">
+              <i class="fas fa-plus-circle me-1"></i>Create
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link active" href="/user-compilations">
+              <i class="fas fa-user-edit me-1"></i>My Compilations
+            </a>
+          </li>
+        </ul>
+
+        <ul class="navbar-nav">
+          <li class="nav-item">
+            <a class="nav-link" href="/import">
+              <i class="fas fa-upload me-1"></i>Import Data
+            </a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Save Status Messages -->
+  <div id="saveStatus" class="save-status"></div>
+
+  <!-- Main Content -->
+  <div class="container main-content">
+    <!-- Breadcrumb -->
+    <nav aria-label="breadcrumb">
+      <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="/"><i class="fas fa-home"></i></a></li>
+        <li class="breadcrumb-item"><a href="/user-compilations">My Compilations</a></li>
+        <li class="breadcrumb-item"><a href="/compilation-preview/{{ compilation._id }}">{{ compilation.title }}</a></li>
+        <li class="breadcrumb-item active">Edit</li>
+      </ol>
+    </nav>
+
+    <!-- Flash messages -->
+    <div id="flash-messages"></div>
+
+    <!-- Hero Section -->
+    <div class="preview-hero">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <h1 class="display-6 mb-2">
+            <i class="fas fa-edit me-2"></i>Editing: {{ compilation.title }}
+          </h1>
+          <p class="lead mb-3">
+            <i class="fas fa-clock me-2"></i>{{ compilation.duration_rounded }} minutes
+            <span class="ms-3"><i class="fas fa-video me-2"></i><span id="videoCount">{{ compilation.video_count }}</span> videos</span>
+          </p>
+          <span class="status-badge status-{{ compilation.status }}">
+            {% if compilation.status == 'generated' %}
+            <i class="fas fa-cog me-1"></i>Generated
+            {% elif compilation.status == 'to_do' %}
+            <i class="fas fa-list me-1"></i>To Do
+            {% elif compilation.status == 'ready' %}
+            <i class="fas fa-check-circle me-1"></i>Ready
+            {% elif compilation.status == 'uploaded' %}
+            <i class="fas fa-cloud-upload me-1"></i>Uploaded
+            {% else %}
+            {{ compilation.status|title }}
+            {% endif %}
+          </span>
+        </div>
+        <div class="text-end">
+          <small class="opacity-75">Created {{ compilation.created_at.strftime('%B %d, %Y') }}</small>
+        </div>
+      </div>
+    </div>
+
+    <!-- Analytics Dashboard -->
+    {% if analytics %}
+    <div class="analytics-grid">
+      <div class="metric-card">
+        <div class="metric-value">{{ "%.1f"|format(analytics.avg_retention) }}%</div>
+        <div class="metric-label">Average Retention</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value">{{ "{:,}".format(analytics.total_original_views) }}</div>
+        <div class="metric-label">Total Original Views</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value">{{ analytics.quality_distribution.high }}</div>
+        <div class="metric-label">High Quality Videos</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-value">{{ "%.1f"|format(analytics.max_retention) }}%</div>
+        <div class="metric-label">Highest Retention</div>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="row">
+      <!-- Compilation Details -->
+      <div class="col-lg-8">
+        <div class="stats-card">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5><i class="fas fa-list me-2"></i>Video Timeline (Editable)</h5>
+            <small class="text-muted">
+              <span id="currentVideoCount">{{ compilation.timestamps|length if compilation.timestamps else 0 }}</span>
+              segments
+            </small>
+          </div>
+
+          <!-- Drop Zone for Drag & Drop -->
+          <div id="dropZone" class="drop-zone mb-3" style="display: none;">
+            <i class="fas fa-cloud-upload-alt fa-2x text-muted mb-2"></i>
+            <p class="mb-0 text-muted">Drop videos here to add to compilation</p>
+          </div>
+
+          {% if compilation.timestamps %}
+          <div id="timelineContainer" class="timeline-container">
+            {% for timestamp in compilation.timestamps %}
+            <div class="timestamp-card" data-video-id="{{ timestamp.video_id }}" data-index="{{ loop.index0 }}">
+              <div class="d-flex justify-content-between align-items-start">
+                <div class="flex-grow-1">
+                  <div class="d-flex align-items-center mb-2">
+                    <span class="badge bg-primary me-2">{{ timestamp.timestamp }}</span>
+                    {% if timestamp.retention_rate >= 70 %}
+                    <span class="badge quality-badge quality-high">High Quality</span>
+                    {% elif timestamp.retention_rate >= 50 %}
+                    <span class="badge quality-badge quality-medium">Medium Quality</span>
+                    {% else %}
+                    <span class="badge quality-badge quality-low">Low Quality</span>
+                    {% endif %}
+                  </div>
+                  <h6 class="mb-2">{{ timestamp.title }}</h6>
+                  <div class="small text-muted mb-2">
+                    <i class="fas fa-chart-line me-1"></i>{{ "%.1f"|format(timestamp.retention_rate) }}% retention
+                    <span class="ms-3"><i class="fas fa-clock me-1"></i>{{ (timestamp.original_duration // 60) }}:{{
+                      "%02d"|format(timestamp.original_duration % 60) }}</span>
+                  </div>
+                  <div class="retention-bar">
+                    <div
+                      class="retention-fill {% if timestamp.retention_rate >= 70 %}retention-high{% elif timestamp.retention_rate >= 50 %}retention-medium{% else %}retention-low{% endif %}"
+                      style="width: {{ timestamp.retention_rate }}%"></div>
+                  </div>
+                </div>
+                <div class="text-end ms-3">
+                  <a href="/video_detail/{{ timestamp.video_id }}" class="btn btn-outline-primary btn-sm">
+                    <i class="fas fa-external-link-alt me-1"></i>View
+                  </a>
+                </div>
+              </div>
+
+              <!-- Video Control Buttons -->
+              <div class="video-controls">
+                <button class="control-btn btn-move-up" onclick="moveVideoUp('{{ timestamp.video_id }}')" title="Move Up">
+                  <i class="fas fa-arrow-up"></i>
+                </button>
+                <button class="control-btn btn-move-down" onclick="moveVideoDown('{{ timestamp.video_id }}')" title="Move Down">
+                  <i class="fas fa-arrow-down"></i>
+                </button>
+                <button class="control-btn btn-delete" onclick="deleteVideo('{{ timestamp.video_id }}')" title="Delete">
+                  <i class="fas fa-trash"></i>
+                </button>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <div class="text-center py-5">
+            <i class="fas fa-exclamation-triangle text-warning fa-3x mb-3"></i>
+            <h5>No Timeline Data</h5>
+            <p class="text-muted">Timeline information is not available for this compilation.</p>
+          </div>
+          {% endif %}
+
+          <!-- Add Video Button -->
+          <div class="text-center mt-3">
+            <button class="btn btn-success" onclick="openAddVideoModal()">
+              <i class="fas fa-plus me-2"></i>Add Video
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Actions Sidebar -->
+      <div class="col-lg-4">
+        <div class="stats-card">
+          <h5><i class="fas fa-cog me-2"></i>Actions</h5>
+
+          <div class="action-buttons">
+            <button class="btn btn-primary w-100" onclick="saveCompilation()">
+              <i class="fas fa-save me-2"></i>Save Changes
+            </button>
+
+            <button class="btn btn-outline-secondary w-100" onclick="resetCompilation()">
+              <i class="fas fa-undo me-2"></i>Reset to Original
+            </button>
+
+            <a href="/compilation-preview/{{ compilation._id }}" class="btn btn-outline-info w-100">
+              <i class="fas fa-eye me-2"></i>Preview Mode
+            </a>
+
+            <button class="btn btn-outline-danger w-100" onclick="deleteCompilation('{{ compilation._id }}')">
+              <i class="fas fa-trash me-2"></i>Delete Compilation
+            </button>
+          </div>
+        </div>
+
+        <!-- Compilation Stats -->
+        <div class="stats-card">
+          <h5><i class="fas fa-chart-bar me-2"></i>Statistics</h5>
+
+          <div class="row text-center">
+            <div class="col-6 mb-3">
+              <div class="h4 text-primary mb-1" id="statsVideoCount">{{ compilation.video_count }}</div>
+              <small class="text-muted">Videos</small>
+            </div>
+            <div class="col-6 mb-3">
+              <div class="h4 text-primary mb-1" id="statsDuration">{{ compilation.duration_rounded }}</div>
+              <small class="text-muted">Minutes</small>
+            </div>
+            {% if analytics %}
+            <div class="col-6">
+              <div class="h4 text-success mb-1">{{ analytics.quality_distribution.high }}</div>
+              <small class="text-muted">High Quality</small>
+            </div>
+            <div class="col-6">
+              <div class="h4 text-warning mb-1">{{ analytics.quality_distribution.medium }}</div>
+              <small class="text-muted">Medium Quality</small>
+            </div>
+            {% endif %}
+          </div>
+
+          {% if compilation.metadata %}
+          <div class="mt-3 pt-3 border-top">
+            <small class="text-muted">
+              <i class="fas fa-info-circle me-1"></i>
+              Algorithm v{{ compilation.metadata.creation_algorithm_version or '1.0' }}
+            </small>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Navigation -->
+    <div class="text-center mt-4">
+      <a href="/compilation-preview/{{ compilation._id }}" class="btn btn-outline-primary me-3">
+        <i class="fas fa-arrow-left me-2"></i>Back to Preview
+      </a>
+      <a href="/user-compilations" class="btn btn-outline-secondary">
+        <i class="fas fa-list me-2"></i>All Compilations
+      </a>
+    </div>
+  </div>
+
+  <!-- Add Video Modal -->
+  <div class="modal fade" id="addVideoModal" tabindex="-1" aria-labelledby="addVideoModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="addVideoModalLabel">Add Video to Compilation</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <!-- Search Filter -->
+          <div class="mb-3">
+            <input type="text" class="form-control" id="videoSearch" placeholder="Search videos..." onkeyup="filterAvailableVideos()">
+          </div>
+
+          <!-- Available Videos List -->
+          <div id="availableVideosList" class="available-videos-modal">
+            <!-- Videos will be loaded here -->
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-primary" onclick="addSelectedVideos()">Add Selected</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Loading Overlay -->
+  <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+    <div class="loading-content">
+      <div class="spinner-border mb-3" role="status">
+        <span class="visually-hidden">Loading...</span>
+      </div>
+      <p class="mb-0" id="loadingText">Processing...</p>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container">
+      <div class="row">
+        <div class="col-md-6">
+          <h6><i class="fas fa-video me-2"></i>Video Analytics Platform</h6>
+          <p class="mb-0 text-muted">Advanced video compilation management and analytics</p>
+        </div>
+        <div class="col-md-6 text-end">
+          <small class="text-muted">
+            <i class="fas fa-clock me-1"></i>Last updated: <span id="current-time"></span>
+          </small>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    // Update current time
+    document.getElementById('current-time').textContent = new Date().toISOString().slice(0, 16).replace('T', ' ');
+
+    let originalCompilation = {{ compilation | tojson }};
+    let currentCompilation = JSON.parse(JSON.stringify(originalCompilation));
+    let availableVideos = [];
+    let selectedVideoIds = new Set();
+
+    function showFlashMessage(message, category = 'info') {
+      const flashContainer = document.getElementById('flash-messages');
+      const alertDiv = document.createElement('div');
+      alertDiv.className = `alert alert-${category === 'error' ? 'danger' : category} alert-dismissible fade show`;
+      alertDiv.innerHTML = `
+        <i class="fas fa-${category === 'error' ? 'exclamation-triangle' : 'info-circle'} me-2"></i>
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      `;
+      flashContainer.appendChild(alertDiv);
+
+      setTimeout(() => {
+        const alert = bootstrap.Alert.getInstance(alertDiv);
+        if (alert) alert.close();
+      }, 5000);
+    }
+
+    function showSaveStatus(message, type = 'success') {
+      const statusDiv = document.getElementById('saveStatus');
+      statusDiv.innerHTML = `
+        <div class="alert alert-${type} alert-dismissible fade show">
+          <i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-triangle'} me-2"></i>
+          ${message}
+          <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+      `;
+      setTimeout(() => {
+        const alert = bootstrap.Alert.getInstance(statusDiv.querySelector('.alert'));
+        if (alert) alert.close();
+      }, 3000);
+    }
+
+    function showLoading(text = 'Processing...') {
+      document.getElementById('loadingText').textContent = text;
+      document.getElementById('loadingOverlay').style.display = 'flex';
+    }
+
+    function hideLoading() {
+      document.getElementById('loadingOverlay').style.display = 'none';
+    }
+
+    function moveVideoUp(videoId) {
+      const videoIndex = currentCompilation.timestamps.findIndex(v => v.video_id === videoId);
+      if (videoIndex > 0) {
+        // Swap with previous video
+        [currentCompilation.timestamps[videoIndex], currentCompilation.timestamps[videoIndex - 1]] =
+          [currentCompilation.timestamps[videoIndex - 1], currentCompilation.timestamps[videoIndex]];
+        updateTimelineDisplay();
+        updateStats();
+      }
+    }
+
+    function moveVideoDown(videoId) {
+      const videoIndex = currentCompilation.timestamps.findIndex(v => v.video_id === videoId);
+      if (videoIndex < currentCompilation.timestamps.length - 1) {
+        // Swap with next video
+        [currentCompilation.timestamps[videoIndex], currentCompilation.timestamps[videoIndex + 1]] =
+          [currentCompilation.timestamps[videoIndex + 1], currentCompilation.timestamps[videoIndex]];
+        updateTimelineDisplay();
+        updateStats();
+      }
+    }
+
+    function deleteVideo(videoId) {
+      if (confirm('Are you sure you want to remove this video from the compilation?')) {
+        currentCompilation.timestamps = currentCompilation.timestamps.filter(v => v.video_id !== videoId);
+        updateTimelineDisplay();
+        updateStats();
+        showSaveStatus('Video removed from compilation', 'warning');
+      }
+    }
+
+    function updateTimelineDisplay() {
+      const container = document.getElementById('timelineContainer');
+      container.innerHTML = '';
+
+      currentCompilation.timestamps.forEach((timestamp, index) => {
+        const videoElement = document.createElement('div');
+        videoElement.className = 'timestamp-card';
+        videoElement.setAttribute('data-video-id', timestamp.video_id);
+        videoElement.setAttribute('data-index', index);
+
+        // Determine quality badge class
+        let qualityClass = 'quality-low';
+        let qualityText = 'Low Quality';
+        if (timestamp.retention_rate >= 70) {
+          qualityClass = 'quality-high';
+          qualityText = 'High Quality';
+        } else if (timestamp.retention_rate >= 50) {
+          qualityClass = 'quality-medium';
+          qualityText = 'Medium Quality';
+        }
+
+        videoElement.innerHTML = `
+          <div class="d-flex justify-content-between align-items-start">
+            <div class="flex-grow-1">
+              <div class="d-flex align-items-center mb-2">
+                <span class="badge bg-primary me-2">${timestamp.timestamp}</span>
+                <span class="badge quality-badge ${qualityClass}">${qualityText}</span>
+              </div>
+              <h6 class="mb-2">${timestamp.title}</h6>
+              <div class="small text-muted mb-2">
+                <i class="fas fa-chart-line me-1"></i>${timestamp.retention_rate.toFixed(1)}% retention
+                <span class="ms-3"><i class="fas fa-clock me-1"></i>${Math.floor(timestamp.original_duration / 60)}:${String(timestamp.original_duration % 60).padStart(2, '0')}</span>
+              </div>
+              <div class="retention-bar">
+                <div class="retention-fill ${qualityClass === 'quality-high' ? 'retention-high' : qualityClass === 'quality-medium' ? 'retention-medium' : 'retention-low'}"
+                     style="width: ${timestamp.retention_rate}%"></div>
+              </div>
+            </div>
+            <div class="text-end ms-3">
+              <a href="/video_detail/${timestamp.video_id}" class="btn btn-outline-primary btn-sm">
+                <i class="fas fa-external-link-alt me-1"></i>View
+              </a>
+            </div>
+          </div>
+          <div class="video-controls">
+            <button class="control-btn btn-move-up" onclick="moveVideoUp('${timestamp.video_id}')" title="Move Up" ${index === 0 ? 'disabled' : ''}>
+              <i class="fas fa-arrow-up"></i>
+            </button>
+            <button class="control-btn btn-move-down" onclick="moveVideoDown('${timestamp.video_id}')" title="Move Down" ${index === currentCompilation.timestamps.length - 1 ? 'disabled' : ''}>
+              <i class="fas fa-arrow-down"></i>
+            </button>
+            <button class="control-btn btn-delete" onclick="deleteVideo('${timestamp.video_id}')" title="Delete">
+              <i class="fas fa-trash"></i>
+            </button>
+          </div>
+        `;
+        container.appendChild(videoElement);
+      });
+    }
+
+    function updateStats() {
+      const videoCount = currentCompilation.timestamps.length;
+      document.getElementById('videoCount').textContent = videoCount;
+      document.getElementById('currentVideoCount').textContent = videoCount;
+      document.getElementById('statsVideoCount').textContent = videoCount;
+
+      // Update duration (recalculate based on timestamps)
+      let totalDuration = 0;
+      currentCompilation.timestamps.forEach((timestamp, index) => {
+        totalDuration += timestamp.original_duration;
+        if (index < currentCompilation.timestamps.length - 1) {
+          totalDuration += 2; // Add 2 seconds for transitions
+        }
+      });
+
+      const durationMinutes = Math.round(totalDuration / 60);
+      document.getElementById('statsDuration').textContent = durationMinutes;
+    }
+
+    function openAddVideoModal() {
+      showLoading('Loading available videos...');
+
+      fetch('/api/available-videos/{{ compilation._id }}')
+        .then(response => response.json())
+        .then(data => {
+          hideLoading();
+          if (data.success) {
+            availableVideos = data.videos;
+            displayAvailableVideos();
+            const modal = new bootstrap.Modal(document.getElementById('addVideoModal'));
+            modal.show();
+          } else {
+            showFlashMessage('Failed to load available videos: ' + data.error, 'error');
+          }
+        })
+        .catch(error => {
+          hideLoading();
+          showFlashMessage('Error loading videos: ' + error.message, 'error');
+        });
+    }
+
+    function displayAvailableVideos(videosToShow = null) {
+      const container = document.getElementById('availableVideosList');
+      const videos = videosToShow || availableVideos;
+
+      container.innerHTML = '';
+      videos.forEach(video => {
+        const videoElement = document.createElement('div');
+        videoElement.className = 'available-video-item';
+        videoElement.setAttribute('data-video-id', video.video_id);
+
+        if (selectedVideoIds.has(video.video_id)) {
+          videoElement.classList.add('selected');
+        }
+
+        videoElement.innerHTML = `
+          <div class="d-flex align-items-center">
+            <img src="${video.thumbnail_url || 'https://via.placeholder.com/80x60'}"
+                 class="video-thumbnail me-3" alt="${video.title}">
+            <div class="flex-grow-1">
+              <h6 class="mb-1">${video.title}</h6>
+              <small class="text-muted">
+                <i class="fas fa-clock me-1"></i>${Math.floor(video.duration_seconds / 60)}:${String(video.duration_seconds % 60).padStart(2, '0')}
+                <i class="fas fa-chart-line ms-3 me-1"></i>${video.retention_30s || 0}% retention
+                <i class="fas fa-eye ms-3 me-1"></i>${(video.view_count || 0).toLocaleString()} views
+              </small>
+            </div>
+            ${selectedVideoIds.has(video.video_id) ? '<i class="fas fa-check-circle text-success"></i>' : ''}
+          </div>
+        `;
+
+        videoElement.onclick = () => toggleVideoSelection(video.video_id);
+        container.appendChild(videoElement);
+      });
+    }
+
+    function toggleVideoSelection(videoId) {
+      if (selectedVideoIds.has(videoId)) {
+        selectedVideoIds.delete(videoId);
+      } else {
+        selectedVideoIds.add(videoId);
+      }
+      displayAvailableVideos();
+    }
+
+    function filterAvailableVideos() {
+      const searchTerm = document.getElementById('videoSearch').value.toLowerCase();
+      const filtered = availableVideos.filter(video =>
+        video.title.toLowerCase().includes(searchTerm) ||
+        (video.description && video.description.toLowerCase().includes(searchTerm))
+      );
+      displayAvailableVideos(filtered);
+    }
+
+    function addSelectedVideos() {
+      if (selectedVideoIds.size === 0) {
+        showFlashMessage('Please select at least one video', 'warning');
+        return;
+      }
+
+      const videosToAdd = availableVideos.filter(video => selectedVideoIds.has(video.video_id));
+
+      videosToAdd.forEach(video => {
+        // Calculate new timestamp
+        let currentTime = 0;
+        if (currentCompilation.timestamps.length > 0) {
+          const lastTimestamp = currentCompilation.timestamps[currentCompilation.timestamps.length - 1];
+          // Parse the last timestamp
+          const timeParts = lastTimestamp.timestamp.split(':');
+          if (timeParts.length === 2) {
+            currentTime = parseInt(timeParts[0]) * 60 + parseInt(timeParts[1]);
+          } else if (timeParts.length === 3) {
+            currentTime = parseInt(timeParts[0]) * 3600 + parseInt(timeParts[1]) * 60 + parseInt(timeParts[2]);
+          }
+          currentTime += lastTimestamp.original_duration + 2; // Add duration and transition time
+        }
+
+        // Format new timestamp
+        let newTimestamp;
+        if (currentTime >= 3600) {
+          const hours = Math.floor(currentTime / 3600);
+          const minutes = Math.floor((currentTime % 3600) / 60);
+          const seconds = currentTime % 60;
+          newTimestamp = `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        } else {
+          const minutes = Math.floor(currentTime / 60);
+          const seconds = currentTime % 60;
+          newTimestamp = `${minutes}:${String(seconds).padStart(2, '0')}`;
+        }
+
+        currentCompilation.timestamps.push({
+          timestamp: newTimestamp,
+          title: video.title,
+          video_id: video.video_id,
+          original_duration: video.duration_seconds,
+          original_duration_formatted: `${Math.floor(video.duration_seconds / 60)}:${String(video.duration_seconds % 60).padStart(2, '0')}`,
+          retention_rate: video.retention_30s || 0
+        });
+      });
+
+      updateTimelineDisplay();
+      updateStats();
+
+      // Close modal and reset selections
+      const modal = bootstrap.Modal.getInstance(document.getElementById('addVideoModal'));
+      modal.hide();
+      selectedVideoIds.clear();
+      document.getElementById('videoSearch').value = '';
+
+      showSaveStatus(`Added ${videosToAdd.length} video(s) to compilation`, 'success');
+    }
+
+    function saveCompilation() {
+      showLoading('Saving compilation...');
+
+      fetch('/api/compilation/{{ compilation._id }}/update', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          timestamps: currentCompilation.timestamps
+        })
+      })
+        .then(response => response.json())
+        .then(data => {
+          hideLoading();
+          if (data.success) {
+            originalCompilation = JSON.parse(JSON.stringify(currentCompilation));
+            showSaveStatus('Compilation saved successfully!', 'success');
+          } else {
+            showFlashMessage('Failed to save compilation: ' + data.error, 'error');
+          }
+        })
+        .catch(error => {
+          hideLoading();
+          showFlashMessage('Error saving compilation: ' + error.message, 'error');
+        });
+    }
+
+    function resetCompilation() {
+      if (confirm('Are you sure you want to reset to the original compilation? All changes will be lost.')) {
+        currentCompilation = JSON.parse(JSON.stringify(originalCompilation));
+        updateTimelineDisplay();
+        updateStats();
+        showSaveStatus('Compilation reset to original state', 'info');
+      }
+    }
+
+    function deleteCompilation(compilationId) {
+      if (confirm('Are you sure you want to delete this compilation?')) {
+        showLoading('Deleting compilation...');
+
+        fetch(`/api/compilation/${compilationId}/delete`, {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+          }
+        })
+          .then(response => response.json())
+          .then(data => {
+            hideLoading();
+            if (data.success) {
+              showFlashMessage('Compilation deleted successfully!', 'success');
+              setTimeout(() => window.location.href = '/user-compilations', 300);
+            } else {
+              showFlashMessage('Error: ' + (data.error || 'Unknown error'), 'error');
+            }
+          })
+          .catch(error => {
+            hideLoading();
+            showFlashMessage('Network error: ' + error.message, 'error');
+          });
+      }
+    }
+  </script>
+</body>
+
+</html>
