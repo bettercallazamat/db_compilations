@@ -483,7 +483,14 @@ def index():
 def video_detail(video_id):
     try:
         # Get video from database
-        video = videos_collection.find_one({'video_id': video_id})
+        video = videos_collection.find_one({'video_id': video_id}, {
+            'title': 1, 'video_id': 1, 'published_at': 1, 'thumbnail_url': 1,
+            'duration_seconds': 1, 'view_count': 1, 'like_count': 1, 'comment_count': 1,
+            'description': 1, 'average_view_percentage': 1, 'retention_30s': 1,
+            'estimated_minutes_watched': 1, 'average_view_duration': 1, 'duration': 1,
+            'actor': 1, 'tags': 1, 'is_compilation': 1, 'compilation_usage_stats': 1,
+            'user_compilation_usage': 1, 'created_at': 1, 'updated_at': 1
+        })
 
         if not video:
             return "Video not found", 404

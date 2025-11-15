@@ -3,6 +3,7 @@ from typing import List, Dict, Tuple, Optional
 from bson.objectid import ObjectId
 import math
 from enum import Enum
+from compilation_parser import VideoUsageTracker
 
 
 class CompilationStatus(Enum):
@@ -32,6 +33,13 @@ class CompilationCreator:
         self.videos_collection = videos_collection
         self.compilations_collection = compilations_collection
         self.user_compilations_collection = user_compilations_collection
+
+        # Initialize VideoUsageTracker to update stats after compilation creation
+        self.usage_tracker = VideoUsageTracker(
+            compilations_collection,
+            user_compilations_collection,
+            videos_collection
+        )
 
         # Configuration constants for compilation creation logic
         # Maximum times a video can be used in compilations per year
@@ -798,6 +806,14 @@ class CompilationCreator:
             result = self.user_compilations_collection.insert_one(
                 compilation_doc)
             compilation_id = str(result.inserted_id)
+
+            # Update usage statistics for videos after compilation creation
+            # This ensures both default and live compilations update usage stats properly
+            try:
+                self.usage_tracker.update_video_usage_stats()
+            except Exception as stats_error:
+                # Log stats update error but don't fail the compilation creation
+                print(f"Warning: Failed to update usage stats after compilation creation: {stats_error}")
 
             # If return_compilation_doc is True, return the full document
             if return_compilation_doc:
