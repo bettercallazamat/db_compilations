@@ -353,7 +353,7 @@ class CompilationCreator:
                 continue
 
             # Check date constraint and ensure videos are within duration limit
-            cutoff_date = datetime(2024, 12, 1) # Lya-lya date
+            cutoff_date = datetime(2024, 9, 11)  # Updated date constraint
             valid_candidates = []
 
             for v in candidates:
@@ -375,36 +375,39 @@ class CompilationCreator:
                 continue
 
             # First pass: Look for videos never used as first video for this duration
-            for video in valid_candidates:
-                usage_stats = video.get('compilation_usage_stats', {})
-                first_video_by_duration = usage_stats.get(
-                    'first_video_by_duration', {})
-
-                # If the field doesn't exist or count is 0, this video can be used
-                if first_video_by_duration.get(duration_key, 0) == 0:
-                    return video
-
-            # Second pass: If no unused videos found, find the least used one
-            # Sort by usage count (ascending) to get least used first
-            candidates_with_usage = []
+            never_used_videos = []
+            min_usage_videos = []
+            
             for video in valid_candidates:
                 usage_stats = video.get('compilation_usage_stats', {})
                 first_video_by_duration = usage_stats.get(
                     'first_video_by_duration', {})
                 usage_count = first_video_by_duration.get(duration_key, 0)
 
-                candidates_with_usage.append((video, usage_count))
+                # Separate videos by usage count
+                if usage_count == 0:
+                    never_used_videos.append(video)
+                else:
+                    min_usage_videos.append((video, usage_count))
 
-            # Sort by usage count, then by retention rate (descending)
-            candidates_with_usage.sort(key=lambda x: (
-                x[1],  # Usage count (ascending - prefer less used)
-                # Retention rate (descending - prefer higher)
-                -x[0].get('retention_30s', 0)
-            ))
+            # If there are videos never used, randomly select from them
+            if never_used_videos:
+                import random
+                return random.choice(never_used_videos)
 
-            # Return the best candidate from this category if available
-            if candidates_with_usage:
-                return candidates_with_usage[0][0]
+            # Second pass: If no never-used videos, find the least used ones
+            # Sort by usage count (ascending) to get least used first
+            min_usage_videos.sort(key=lambda x: x[1])  # Sort by usage count
+            
+            # Get the minimum usage count
+            if min_usage_videos:
+                min_usage = min_usage_videos[0][1]
+                least_used_videos = [video for video, count in min_usage_videos if count == min_usage]
+                
+                # Randomly select from the least used videos
+                import random
+                selected_video = random.choice(least_used_videos)
+                return selected_video
 
         # If we get here, no suitable video was found in any category
         return None
@@ -524,9 +527,26 @@ class CompilationCreator:
             if not available_candidates:
                 break
 
-            # Select best fitting video
-            available_candidates.sort(key=selection_score, reverse=True)
-            selected_video = available_candidates[0]
+            # Group candidates by usage count to prioritize less-used videos
+            usage_groups = {}
+            for video in available_candidates:
+                usage_stats = video.get('compilation_usage_stats', {})
+                total_usage = usage_stats.get('total_inclusions', 0)
+                
+                if total_usage not in usage_groups:
+                    usage_groups[total_usage] = []
+                usage_groups[total_usage].append(video)
+
+            # Sort usage groups by total usage (ascending - less used first)
+            sorted_usage_groups = sorted(usage_groups.items(), key=lambda x: x[0])
+            
+            # Get videos with minimum usage count
+            min_usage = sorted_usage_groups[0][0]
+            min_usage_videos = sorted_usage_groups[0][1]
+            
+            # Randomly select from the least used videos
+            import random
+            selected_video = random.choice(min_usage_videos)
 
             selected_videos.append(selected_video)
             used_video_ids.add(selected_video['video_id'])
@@ -614,17 +634,37 @@ class CompilationCreator:
         while current_duration < target_duration_seconds:
             pattern_type, video_pool = pattern[current_pattern_index % len(pattern)]
 
-            # Find a video from the pool that hasn't been used
-            selected_video = None
+            # Find a video from the pool that hasn't been used, prioritizing less-used videos
+            valid_videos = []
             for video in video_pool:
                 if video.get('video_id') not in used_video_ids:
                     video_duration = video.get('duration_seconds', 0)
                     # Check if adding this video would exceed the target by more than 60 seconds
                     if current_duration + video_duration <= target_duration_seconds + 60:
-                        selected_video = video
-                        break
+                        valid_videos.append(video)
 
-            if not selected_video:
+            if valid_videos:
+                # Group by usage count to prioritize less-used videos
+                usage_groups = {}
+                for video in valid_videos:
+                    usage_stats = video.get('compilation_usage_stats', {})
+                    total_usage = usage_stats.get('total_inclusions', 0)
+                    
+                    if total_usage not in usage_groups:
+                        usage_groups[total_usage] = []
+                    usage_groups[total_usage].append(video)
+
+                # Sort usage groups by total usage (ascending - less used first)
+                sorted_usage_groups = sorted(usage_groups.items(), key=lambda x: x[0])
+                
+                # Get videos with minimum usage count
+                min_usage = sorted_usage_groups[0][0]
+                min_usage_videos = sorted_usage_groups[0][1]
+                
+                # Randomly select from the least used videos
+                import random
+                selected_video = random.choice(min_usage_videos)
+            else:
                 # If we can't find a suitable video in the current pattern, try to find any unused video
                 all_remaining = []
                 for pool in [high_retention, medium_retention, low_retention]:
@@ -633,10 +673,25 @@ class CompilationCreator:
                 if not all_remaining:
                     break  # No more videos available
 
-                # Pick the shortest video that fits
-                all_remaining.sort(key=lambda v: v.get('duration_seconds', float('inf')))
-                selected_video = None
+                # Group remaining videos by usage count and pick from least used
+                remaining_usage_groups = {}
                 for video in all_remaining:
+                    usage_stats = video.get('compilation_usage_stats', {})
+                    total_usage = usage_stats.get('total_inclusions', 0)
+                    
+                    if total_usage not in remaining_usage_groups:
+                        remaining_usage_groups[total_usage] = []
+                    remaining_usage_groups[total_usage].append(video)
+
+                # Get the least used videos
+                sorted_remaining_groups = sorted(remaining_usage_groups.items(), key=lambda x: x[0])
+                min_remaining_usage = sorted_remaining_groups[0][0]
+                min_remaining_videos = sorted_remaining_groups[0][1]
+                
+                # Sort by duration and pick the shortest that fits
+                min_remaining_videos.sort(key=lambda v: v.get('duration_seconds', float('inf')))
+                selected_video = None
+                for video in min_remaining_videos:
                     if current_duration + video.get('duration_seconds', 0) <= target_duration_seconds + 60:
                         selected_video = video
                         break
