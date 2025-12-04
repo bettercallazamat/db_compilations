@@ -33,6 +33,7 @@ mongo = PyMongo(app)
 videos_collection = mongo.db.videos
 compilations_collection = mongo.db.compilations
 user_compilations_collection = mongo.db.user_compilations  # New collection for user-created compilations
+blacklist_collection = mongo.db.video_blacklist  # Collection for blacklisted videos
 
 # Initialize managers with enhanced functionality
 compilation_manager = CompilationManager(
@@ -40,9 +41,58 @@ compilation_manager = CompilationManager(
     compilations_collection,
     user_compilations_collection  # Add this third parameter
 )
-compilation_creator = CompilationCreator(videos_collection, compilations_collection, user_compilations_collection)
+compilation_creator = CompilationCreator(videos_collection, compilations_collection, user_compilations_collection, blacklist_collection)
 compilation_exporter = CompilationExporter(user_compilations_collection, videos_collection)
 frontend_manager = FrontendTemplateManager()
+
+
+# ==================== CUSTOM JINJA2 FILTERS ====================
+
+def format_published_date(date_string):
+    """
+    Format published date in DD.MM.YYYY HH:MM format
+    Handles various input formats including ISO 8601, simple date, and empty strings
+    """
+    if not date_string or date_string.strip() == '':
+        return 'Unknown'
+    
+    try:
+        # Handle ISO 8601 format (e.g., '2024-09-15T10:00:00Z')
+        if 'T' in date_string:
+            # Remove 'Z' and parse as UTC, then convert to local time
+            dt = datetime.fromisoformat(date_string.replace('Z', '+00:00'))
+            # Convert to local time (assuming UTC+6 for Asia/Bishkek)
+            local_dt = dt.replace(tzinfo=None) + timedelta(hours=6)
+            return local_dt.strftime('%d.%m.%Y %H:%M')
+        
+        # Handle simple date format (e.g., '2024-09-15')
+        elif '-' in date_string and len(date_string) >= 10:
+            dt = datetime.strptime(date_string[:10], '%Y-%m-%d')
+            return dt.strftime('%d.%m.%Y')
+        
+        # Try other common formats
+        else:
+            # Try parsing as various formats
+            for fmt in ['%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%d.%m.%Y', '%m/%d/%Y']:
+                try:
+                    dt = datetime.strptime(date_string, fmt)
+                    if fmt == '%Y-%m-%d %H:%M:%S' or fmt == '%Y-%m-%d %H:%M':
+                        return dt.strftime('%d.%m.%Y %H:%M')
+                    else:
+                        return dt.strftime('%d.%m.%Y')
+                except ValueError:
+                    continue
+            
+            # If no format works, return original
+            return date_string
+            
+    except Exception as e:
+        # If parsing fails, return the original string
+        return date_string
+
+
+# Register the custom filter
+app.jinja_env.filters['format_date'] = format_published_date
 
 
 # ==================== AUTHENTICATION SYSTEM ====================
@@ -215,6 +265,16 @@ class VideoManager:
 
             print(f"   Validated {len(video_data_dict)} videos for processing")
 
+            # Mark videos as deleted that exist in DB but not in new JSON
+            print("   🔍 Checking for deleted videos...")
+            deleted_videos = VideoManager.mark_deleted_videos(video_data_dict)
+            if deleted_videos:
+                print(f"   📝 Found {len(deleted_videos)} deleted videos")
+                for video in deleted_videos[:5]:  # Show first 5 examples
+                    print(f"     - {video['original_title']} → {video['new_title']}")
+                if len(deleted_videos) > 5:
+                    print(f"     ... and {len(deleted_videos) - 5} more")
+
             # Process videos efficiently
             for video_id, video_data in video_data_dict.items():
                 try:
@@ -283,6 +343,8 @@ class VideoManager:
                 'updated': updated_count,
                 'total': len(videos),
                 'skipped': skipped_count,
+                'deleted_count': len(deleted_videos),
+                'deleted_videos': deleted_videos,
                 'processing_results': processing_results,
                 'stats_result': stats_result,
                 # Limit errors to prevent overwhelming the UI
@@ -339,6 +401,7 @@ class VideoManager:
             'actor': False,
             'tags': [],
             'is_compilation': False,
+            'is_deleted': False,  # New field to track deleted videos
             'compilation_usage_stats': {},
             'user_compilation_usage': {
                 'total_inclusions': 0,
@@ -383,6 +446,56 @@ class VideoManager:
 
         return update_doc
 
+    @staticmethod
+    def mark_deleted_videos(video_data_dict):
+        """Mark videos as deleted that exist in DB but not in new JSON data"""
+        try:
+            # Get all video IDs from the new JSON data
+            new_video_ids = set(video_data_dict.keys())
+            
+            # Find videos in database that are not in new JSON
+            deleted_videos = []
+            existing_videos = list(videos_collection.find({'video_id': {'$nin': list(new_video_ids)}}))
+            
+            for video in existing_videos:
+                video_id = video.get('video_id')
+                current_title = video.get('title', '')
+                
+                # Skip if already marked as deleted
+                if video.get('is_deleted', False):
+                    continue
+                    
+                # Skip if title already has [DELETED] prefix
+                if current_title.startswith('[DELETED]'):
+                    continue
+                
+                # Update video to mark as deleted
+                new_title = f"[DELETED] {current_title}"
+                update_result = videos_collection.update_one(
+                    {'video_id': video_id},
+                    {
+                        '$set': {
+                            'title': new_title,
+                            'is_deleted': True,
+                            'updated_at': datetime.utcnow()
+                        }
+                    }
+                )
+                
+                if update_result.modified_count > 0:
+                    deleted_videos.append({
+                        'video_id': video_id,
+                        'original_title': current_title,
+                        'new_title': new_title
+                    })
+            
+            print(f"   🗑️  Marked {len(deleted_videos)} videos as deleted")
+            return deleted_videos
+            
+        except Exception as e:
+            print(f"   ⚠️  Error marking deleted videos: {e}")
+            return []
+
 # ==================== ENHANCED ORIGINAL ROUTES ====================
 
 @app.route('/')
@@ -397,6 +510,7 @@ def index():
     actor_filter = request.args.get('actor')
     compilation_filter = request.args.get('compilation')
     retention_filter = request.args.get('retention')  # New filter
+    tag_filter = request.args.get('tag')
     
     # Build precise search query focused on titles
     query = {}
@@ -435,6 +549,10 @@ def index():
         elif retention_filter == 'low':
             query['retention_30s'] = {'$lt': 50}
 
+    # Tag filtering
+    if tag_filter:
+        query['tags'] = tag_filter
+
     # Get total count with optimized aggregation
     total = videos_collection.count_documents(query)
 
@@ -463,6 +581,9 @@ def index():
         'user_compilations': user_compilations_collection.count_documents({})
     }
 
+    # Get available tags for filter dropdown
+    available_tags = get_available_tags()
+
     return render_template('index.html',
                            videos=videos,
                            page=page,
@@ -473,9 +594,23 @@ def index():
                            actor_filter=actor_filter,
                            compilation_filter=compilation_filter,
                            retention_filter=retention_filter,
+                           tag_filter=tag_filter,
+                           available_tags=available_tags,
                            quick_stats=quick_stats,
                            total=total,
                            now=datetime.now())
+
+
+def get_available_tags():
+    """Get all available tags for filter dropdown"""
+    pipeline = [
+        {'$unwind': '$tags'},
+        {'$group': {'_id': '$tags', 'count': {'$sum': 1}}},
+        {'$sort': {'count': -1, '_id': 1}}
+    ]
+    
+    results = list(videos_collection.aggregate(pipeline))
+    return [result['_id'] for result in results]
 
 
 @app.route('/video_detail/<video_id>')
@@ -830,6 +965,9 @@ def import_videos():
                         parts.append(f"Added {new_videos} new videos")
                 if skipped > 0:
                     parts.append(f"Skipped {skipped} videos")
+                deleted_count = result.get('deleted_count', 0)
+                if deleted_count > 0:
+                    parts.append(f"Marked {deleted_count} videos as deleted")
 
                 message = f"Successfully processed {total} videos. " + ". ".join(parts) + "."
 
@@ -846,6 +984,7 @@ def import_videos():
                     'updated_count': updated,
                     'total_count': total,
                     'skipped_count': skipped,
+                    'deleted_count': result.get('deleted_count', 0),
                     'processing_results': result.get('processing_results', {}),
                     'stats_result': result.get('stats_result', {}),
                     'errors': result.get('errors', []),
@@ -854,6 +993,7 @@ def import_videos():
                         'new_videos': imported - updated,
                         'updated_videos': updated,
                         'skipped_videos': skipped,
+                        'deleted_videos': result.get('deleted_count', 0),
                         'compilation_updates': result.get('processing_results', {}).get('updated_compilations', 0)
                     }
                 })
@@ -1553,6 +1693,7 @@ def api_create_compilation():
         compilation_type = data.get('compilation_type', 'default')
         from_date = data.get('from_date')
         to_date = data.get('to_date')
+        tags = data.get('tags', [])  # Get tags filter from request
         user_id = data.get('user_id', 'system')  # In production, get from session
 
         # Validate input parameters
@@ -1582,11 +1723,19 @@ def api_create_compilation():
                     'error': 'Invalid to_date format. Use YYYY-MM-DD'
                 })
 
+        # Validate tags parameter
+        if tags and not isinstance(tags, list):
+            return jsonify({
+                'success': False,
+                'error': 'Tags must be a list'
+            })
+
         # Create compilation using advanced algorithm
         result = compilation_creator.create_compilation(
             duration_minutes=duration,
             from_date=from_date,
             to_date=to_date,
+            tags=tags,  # Pass tags filter to compilation creator
             title_prefix='Auto-Generated',  # Fixed title prefix as requested
             user_id=user_id,
             compilation_type=compilation_type
@@ -1720,13 +1869,14 @@ def api_compilation_preview():
         duration = data.get('duration', 10)
         from_date = data.get('from_date')
         to_date = data.get('to_date')
+        tags = data.get('tags', [])  # Get tags filter from request
 
         # Get all available videos for analysis
         all_videos = list(videos_collection.find({}))
 
         # Get total available videos using the main categorization for other metrics
         categorized_videos = compilation_creator.categorize_videos_by_retention(
-            all_videos, from_date, to_date
+            all_videos, from_date, to_date, tags
         )
 
         # Calculate preview statistics
@@ -1759,6 +1909,7 @@ def api_compilation_preview():
             duration_minutes=duration,
             from_date=from_date,
             to_date=to_date,
+            tags=tags,  # Pass tags filter to preview compilation
             user_id='preview',
             return_compilation_doc=True
         )
@@ -1957,10 +2108,12 @@ def edit_compilation(compilation_id):
 @app.route('/api/compilation/<compilation_id>/update', methods=['POST'])
 @login_required
 def api_update_compilation(compilation_id):
-    """Update compilation with new video list"""
+    """Enhanced compilation update with comprehensive video stats and metadata management"""
     try:
         data = request.get_json()
         new_timestamps = data.get('timestamps', [])
+        new_title = data.get('title')
+        duration_rounded = data.get('duration_rounded')
 
         if not new_timestamps:
             return jsonify({
@@ -1968,16 +2121,73 @@ def api_update_compilation(compilation_id):
                 'error': 'No timestamps provided'
             }), 400
 
+        # Get current compilation to compare changes
+        current_compilation = user_compilations_collection.find_one({
+            '_id': ObjectId(compilation_id)
+        })
+
+        if not current_compilation:
+            return jsonify({
+                'success': False,
+                'error': 'Compilation not found'
+            }), 404
+
+        current_timestamps = current_compilation.get('timestamps', [])
+        current_first_video_id = current_timestamps[0].get('video_id') if current_timestamps else None
+        new_first_video_id = new_timestamps[0].get('video_id') if new_timestamps else None
+
+        # Calculate new compilation duration
+        total_duration = 0
+        for i, timestamp in enumerate(new_timestamps):
+            video_duration = timestamp.get('original_duration', 0)
+            total_duration += video_duration
+            if i < len(new_timestamps) - 1:  # Add transition time except for last video
+                total_duration += 2
+
+        # If duration_rounded not provided, calculate it
+        if duration_rounded is None:
+            duration_rounded = max(5, round(total_duration / 60 / 5) * 5)
+
+        # Handle title updates
+        title_to_set = None
+        first_video_changed = False
+        
+        if new_title and new_title.strip():
+            # Manual title change by user
+            title_to_set = new_title.strip()[:100]  # Enforce 100 character limit
+        elif current_first_video_id != new_first_video_id and new_first_video_id:
+            # First video changed - auto-update title based on new first video
+            first_video = videos_collection.find_one({'video_id': new_first_video_id})
+            if first_video:
+                first_video_title = first_video.get('title', 'Untitled Video')
+                # Remove existing suffixes to avoid duplication
+                suffixes_to_remove = [
+                    " | Mega Compilation | D Billions Kids Songs",
+                    " | D Billions Kids Songs"
+                ]
+                clean_title = first_video_title
+                for suffix in suffixes_to_remove:
+                    if clean_title.endswith(suffix):
+                        clean_title = clean_title[:-len(suffix)]
+                title_to_set = f"{clean_title} | Mega Compilation | D Billions Kids Songs"
+                first_video_changed = True
+
+        # Prepare update fields
+        update_fields = {
+            'timestamps': new_timestamps,
+            'updated_at': datetime.utcnow(),
+            'video_count': len(new_timestamps),
+            'actual_duration_seconds': total_duration,
+            'duration_rounded': duration_rounded
+        }
+        
+        if title_to_set:
+            update_fields['title'] = title_to_set
+
         # Update the compilation
         result = user_compilations_collection.update_one(
             {'_id': ObjectId(compilation_id)},
-            {
-                '$set': {
-                    'timestamps': new_timestamps,
-                    'updated_at': datetime.utcnow(),
-                    'video_count': len(new_timestamps)
-                }
-            }
+            {'$set': update_fields}
         )
 
         if result.matched_count == 0:
@@ -1986,12 +2196,76 @@ def api_update_compilation(compilation_id):
                 'error': 'Compilation not found'
             }), 404
 
-        return jsonify({
+        # Update video usage statistics
+        updated_video_ids = set()
+        
+        # Get all video IDs from new timestamps
+        new_video_ids = {ts.get('video_id') for ts in new_timestamps if ts.get('video_id')}
+        
+        # Get all video IDs from old timestamps  
+        old_video_ids = {ts.get('video_id') for ts in current_timestamps if ts.get('video_id')}
+        
+        # Videos that are still in compilation (may have changed position)
+        still_in_compilation = new_video_ids.intersection(old_video_ids)
+        
+        # Videos that were added
+        added_videos = new_video_ids - old_video_ids
+        
+        # Videos that were removed
+        removed_videos = old_video_ids - new_video_ids
+        
+        print(f"🔄 Video stats update - Added: {len(added_videos)}, Removed: {len(removed_videos)}, Position changes: {len(still_in_compilation)}")
+
+        # Update usage statistics for all affected videos
+        usage_tracker = VideoUsageTracker(
+            compilations_collection, user_compilations_collection, videos_collection
+        )
+        
+        # Update stats for videos that are still in compilation (position might have changed)
+        for video_id in still_in_compilation:
+            try:
+                usage_tracker.update_video_usage_stats(video_id)
+                updated_video_ids.add(video_id)
+            except Exception as e:
+                print(f"⚠️  Error updating stats for video {video_id}: {e}")
+
+        # Update stats for added videos (increase usage)
+        for video_id in added_videos:
+            try:
+                usage_tracker.update_video_usage_stats(video_id)
+                updated_video_ids.add(video_id)
+            except Exception as e:
+                print(f"⚠️  Error updating stats for added video {video_id}: {e}")
+
+        # Update stats for removed videos (decrease usage)
+        for video_id in removed_videos:
+            try:
+                usage_tracker.update_video_usage_stats(video_id)
+                updated_video_ids.add(video_id)
+            except Exception as e:
+                print(f"⚠️  Error updating stats for removed video {video_id}: {e}")
+
+        # Prepare response
+        response_data = {
             'success': True,
-            'message': 'Compilation updated successfully'
-        })
+            'message': 'Compilation updated successfully',
+            'updated_fields': {
+                'video_count': len(new_timestamps),
+                'duration_rounded': duration_rounded,
+                'actual_duration_seconds': total_duration,
+                'title_updated': title_to_set is not None,
+                'first_video_changed': first_video_changed
+            },
+            'video_stats_updated': len(updated_video_ids)
+        }
+        
+        if title_to_set:
+            response_data['new_title'] = title_to_set
+
+        return jsonify(response_data)
 
     except Exception as e:
+        print(f"❌ Error in api_update_compilation: {str(e)}")
         return jsonify({
             'success': False,
             'error': f'Failed to update compilation: {str(e)}'
@@ -2001,7 +2275,7 @@ def api_update_compilation(compilation_id):
 @app.route('/api/available-videos/<compilation_id>')
 @login_required
 def api_available_videos(compilation_id):
-    """Get list of videos that can be added to compilation"""
+    """Get list of videos that can be added to compilation with improved search support"""
     try:
         # Get current compilation to exclude already included videos
         current_compilation = user_compilations_collection.find_one({
@@ -2019,15 +2293,77 @@ def api_available_videos(compilation_id):
         for timestamp in current_compilation.get('timestamps', []):
             existing_video_ids.add(timestamp.get('video_id'))
 
-        # Get all videos that are not compilations and not already in this compilation
+        # Get search parameters
+        search_query = request.args.get('search', '').strip()
+        page = request.args.get('page', 1, type=int)
+        per_page = min(request.args.get('per_page', 100, type=int), 200)  # Limit to 200 per page max
+        
+        print(f"🔍 Search query: '{search_query}', page: {page}, per_page: {per_page}")
+        
+        # Build base query - exclude compilations and already included videos
         query = {
             'is_compilation': False,
             'video_id': {'$nin': list(existing_video_ids)}
         }
 
-        videos = list(videos_collection.find(query)
-                     .sort('published_at', -1)
-                     .limit(50))  # Limit to 50 videos for performance
+        # Add enhanced search functionality
+        if search_query:
+            # Create more flexible search patterns
+            import re
+            
+            # Split search query into individual words for better matching
+            search_words = [word.strip() for word in search_query.split() if word.strip()]
+            
+            if len(search_words) == 1:
+                # Single word search - use flexible matching
+                word = search_words[0]
+                escaped_word = re.escape(word)
+                
+                query['$or'] = [
+                    # Title contains the word (flexible matching)
+                    {'title': {'$regex': escaped_word, '$options': 'i'}},
+                    # Video ID contains or matches the word
+                    {'video_id': {'$regex': escaped_word, '$options': 'i'}},
+                ]
+            else:
+                # Multi-word search - require all words to appear in title or video_id
+                word_patterns = []
+                for word in search_words:
+                    escaped_word = re.escape(word)
+                    word_patterns.append({
+                        '$or': [
+                            {'title': {'$regex': escaped_word, '$options': 'i'}},
+                            {'video_id': {'$regex': escaped_word, '$options': 'i'}},
+                        ]
+                    })
+                
+                query['$and'] = word_patterns
+            
+            print(f"🔍 Built query: {query}")
+
+        # Get total count for pagination
+        total_count = videos_collection.count_documents(query)
+        print(f"📊 Total matching videos: {total_count}")
+
+        # Calculate skip value
+        skip = (page - 1) * per_page
+
+        # Get videos with pagination and sorting by relevance for search results
+        if search_query:
+            # If searching, sort by relevance (title matches first)
+            videos = list(videos_collection.find(query)
+                         .sort([
+                             ('title', 1),  # Title ascending for consistent ordering
+                             ('published_at', -1)  # Most recent first
+                         ])
+                         .skip(skip)
+                         .limit(per_page))
+        else:
+            # Default sorting - most recent first
+            videos = list(videos_collection.find(query)
+                         .sort('published_at', -1)
+                         .skip(skip)
+                         .limit(per_page))
 
         # Convert to JSON-serializable format
         available_videos = []
@@ -2044,12 +2380,20 @@ def api_available_videos(compilation_id):
                 'published_at': video.get('published_at', '')
             })
 
+        print(f"📄 Returning {len(available_videos)} videos for page {page}")
+
         return jsonify({
             'success': True,
-            'videos': available_videos
+            'videos': available_videos,
+            'total_count': total_count,
+            'page': page,
+            'per_page': per_page,
+            'search_query': search_query,
+            'has_more': (page * per_page) < total_count
         })
 
     except Exception as e:
+        print(f"❌ Error in api_available_videos: {str(e)}")
         return jsonify({
             'success': False,
             'error': f'Failed to get available videos: {str(e)}'
@@ -2326,6 +2670,292 @@ def api_cleanup_exports():
             'success': False,
             'error': f'Cleanup failed: {str(e)}'
         })
+
+
+# ==================== SETTINGS PAGE ROUTES ====================
+
+@app.route('/settings')
+@login_required
+def settings():
+    """Settings page with blacklist and general configuration"""
+    try:
+        # Get all blacklisted videos
+        blacklisted_videos = list(blacklist_collection.find({}).sort('added_date', -1))
+        
+        # Get video details for blacklisted videos
+        for item in blacklisted_videos:
+            video = videos_collection.find_one({'video_id': item['video_id']})
+            item['title'] = video.get('title', 'Unknown Title') if video else 'Unknown Title'
+            item['_id'] = str(item['_id'])
+        
+        # Get total video count
+        total_videos = videos_collection.count_documents({})
+        
+        return render_template('settings.html',
+                               blacklisted_videos=blacklisted_videos,
+                               total_videos=total_videos)
+    except Exception as e:
+        return f"Error loading settings: {str(e)}", 500
+
+
+@app.route('/api/settings/blacklist', methods=['POST'])
+@login_required
+def api_add_to_blacklist():
+    """Add video ID to blacklist"""
+    try:
+        data = request.get_json()
+        video_id = data.get('video_id', '').strip()
+        
+        if not video_id:
+            return jsonify({'success': False, 'error': 'Video ID is required'}), 400
+        
+        # Check if video exists
+        video = videos_collection.find_one({'video_id': video_id})
+        if not video:
+            return jsonify({'success': False, 'error': 'Video not found'}), 404
+        
+        # Check if already blacklisted
+        existing = blacklist_collection.find_one({'video_id': video_id})
+        if existing:
+            return jsonify({'success': False, 'error': 'Video is already blacklisted'}), 400
+        
+        # Add to blacklist
+        blacklist_item = {
+            'video_id': video_id,
+            'added_date': datetime.utcnow(),
+            'added_by': session.get('username', 'admin')
+        }
+        
+        result = blacklist_collection.insert_one(blacklist_item)
+        
+        if result.inserted_id:
+            return jsonify({'success': True, 'message': 'Video added to blacklist'})
+        else:
+            return jsonify({'success': False, 'error': 'Failed to add to blacklist'}), 500
+            
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/settings/blacklist/<video_id>', methods=['DELETE'])
+@login_required
+def api_remove_from_blacklist(video_id):
+    """Remove video ID from blacklist"""
+    try:
+        # URL decode the video_id
+        import urllib.parse
+        video_id = urllib.parse.unquote(video_id)
+        
+        result = blacklist_collection.delete_one({'video_id': video_id})
+        
+        if result.deleted_count > 0:
+            return jsonify({'success': True, 'message': 'Video removed from blacklist'})
+        else:
+            return jsonify({'success': False, 'error': 'Video not found in blacklist'}), 404
+            
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/settings/blacklist/clear', methods=['POST'])
+@login_required
+def api_clear_blacklist():
+    """Clear entire blacklist"""
+    try:
+        result = blacklist_collection.delete_many({})
+        
+        return jsonify({
+            'success': True, 
+            'message': f'Cleared {result.deleted_count} videos from blacklist'
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/settings/blacklist')
+@login_required
+def api_get_blacklist():
+    """Get all blacklisted videos"""
+    try:
+        blacklisted_videos = list(blacklist_collection.find({}).sort('added_date', -1))
+        
+        # Get video details
+        for item in blacklisted_videos:
+            video = videos_collection.find_one({'video_id': item['video_id']})
+            item['title'] = video.get('title', 'Unknown Title') if video else 'Unknown Title'
+            item['_id'] = str(item['_id'])
+        
+        return jsonify({
+            'success': True,
+            'blacklisted_videos': blacklisted_videos
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ==================== TAG MANAGEMENT API ENDPOINTS ====================
+
+@app.route('/api/tags/search')
+@login_required
+def api_search_tags():
+    """API endpoint to search for existing tags"""
+    query = request.args.get('query', '').strip()
+    if not query:
+        return jsonify({'tags': []})
+
+    # Search for tags that contain the query
+    pipeline = [
+        {'$unwind': '$tags'},
+        {'$match': {'tags': {'$regex': query, '$options': 'i'}}},
+        {'$group': {'_id': '$tags', 'count': {'$sum': 1}}},
+        {'$sort': {'count': -1, '_id': 1}},
+        {'$limit': 10}
+    ]
+
+    results = list(videos_collection.aggregate(pipeline))
+    tags = [result['_id'] for result in results]
+
+    return jsonify({'tags': tags})
+
+
+@app.route('/api/tags/all')
+@login_required
+def api_get_all_tags():
+    """API endpoint to get all available tags without query requirement"""
+    # Get all unique tags with their counts
+    pipeline = [
+        {'$unwind': '$tags'},
+        {'$group': {'_id': '$tags', 'count': {'$sum': 1}}},
+        {'$sort': {'count': -1, '_id': 1}}
+    ]
+
+    results = list(videos_collection.aggregate(pipeline))
+    tags = [result['_id'] for result in results if result['_id']]  # Filter out empty tags
+
+    return jsonify({'tags': tags})
+
+
+@app.route('/api/video/<video_id>/tags', methods=['POST'])
+@login_required
+def api_add_tag(video_id):
+    """API endpoint to add a tag to a video"""
+    data = request.get_json()
+    tag = data.get('tag', '').strip()
+    
+    if not tag:
+        return jsonify({'error': 'Tag cannot be empty'}), 400
+
+    # Find the video first
+    video = videos_collection.find_one({'video_id': video_id})
+    if not video:
+        return jsonify({'error': 'Video not found'}), 404
+
+    # Get current tags or initialize empty list
+    current_tags = video.get('tags', [])
+    
+    # Check if tag already exists
+    if tag in current_tags:
+        return jsonify({'error': 'Tag already exists'}), 400
+
+    # Add the new tag
+    current_tags.append(tag)
+    
+    result = videos_collection.update_one(
+        {'video_id': video_id},
+        {
+            '$set': {
+                'tags': current_tags,
+                'updated_at': datetime.utcnow()
+            }
+        }
+    )
+
+    if result.matched_count:
+        return jsonify({'success': True})
+    else:
+        return jsonify({'error': 'Failed to add tag'}), 500
+
+
+@app.route('/api/video/<video_id>/tags/<tag>', methods=['DELETE'])
+@login_required
+def api_remove_tag(video_id, tag):
+    """API endpoint to remove a tag from a video"""
+    # URL decode the tag
+    import urllib.parse
+    tag = urllib.parse.unquote(tag)
+
+    # Find the video first
+    video = videos_collection.find_one({'video_id': video_id})
+    if not video:
+        return jsonify({'error': 'Video not found'}), 404
+
+    # Get current tags
+    current_tags = video.get('tags', [])
+    
+    # Check if tag exists
+    if tag not in current_tags:
+        return jsonify({'error': 'Tag not found'}), 404
+
+    # Remove the tag
+    current_tags.remove(tag)
+    
+    result = videos_collection.update_one(
+        {'video_id': video_id},
+        {
+            '$set': {
+                'tags': current_tags,
+                'updated_at': datetime.utcnow()
+            }
+        }
+    )
+
+    if result.matched_count:
+        return jsonify({'success': True})
+    else:
+        return jsonify({'error': 'Failed to remove tag'}), 500
+
+
+@app.route('/api/video/<video_id>/tags')
+@login_required
+def api_get_tags(video_id):
+    """API endpoint to get all tags for a video"""
+    video = videos_collection.find_one({'video_id': video_id})
+    if not video:
+        return jsonify({'error': 'Video not found'}), 404
+
+    tags = video.get('tags', [])
+    return jsonify({'tags': tags})
+
+
+@app.route('/api/video/<video_id>/actor', methods=['POST'])
+@login_required
+def api_update_actor_status(video_id):
+    """API endpoint to update actor status for a video"""
+    data = request.get_json()
+    actor_status = data.get('actor', False)
+    
+    # Find the video first
+    video = videos_collection.find_one({'video_id': video_id})
+    if not video:
+        return jsonify({'error': 'Video not found'}), 404
+
+    # Update the actor status
+    result = videos_collection.update_one(
+        {'video_id': video_id},
+        {
+            '$set': {
+                'actor': bool(actor_status),
+                'updated_at': datetime.utcnow()
+            }
+        }
+    )
+
+    if result.matched_count:
+        return jsonify({'success': True, 'actor': bool(actor_status)})
+    else:
+        return jsonify({'error': 'Failed to update actor status'}), 500
 
 
 if __name__ == '__main__':

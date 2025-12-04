@@ -203,6 +203,209 @@
     color: #dc3545;
   }
 
+  /* Enhanced Tag Search Interface */
+  .tag-search-container {
+    position: relative;
+  }
+
+  .tag-search-input-wrapper {
+    position: relative;
+  }
+
+  .tag-search-input {
+    padding-left: 2.5rem;
+    border-radius: 8px;
+    border: 1px solid #ced4da;
+    transition: all 0.3s ease;
+  }
+
+  .tag-search-input:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+  }
+
+  .tag-search-icon {
+    position: absolute;
+    left: 0.75rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #6c757d;
+    z-index: 5;
+  }
+
+  .selected-tags-container {
+    min-height: 2.5rem;
+  }
+
+  .selected-tags-label {
+    margin-bottom: 0.5rem;
+  }
+
+  .selected-tags-display {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    min-height: 2rem;
+  }
+
+  .selected-tag-chip {
+    display: inline-flex;
+    align-items: center;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 0.375rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    cursor: pointer;
+  }
+
+  .selected-tag-chip:hover {
+    background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
+    transform: translateY(-1px);
+  }
+
+  .selected-tag-chip .remove-tag {
+    margin-left: 0.5rem;
+    font-size: 0.75rem;
+    opacity: 0.8;
+    transition: opacity 0.2s ease;
+  }
+
+  .selected-tag-chip .remove-tag:hover {
+    opacity: 1;
+  }
+
+  .no-tags-selected {
+    color: #6c757d;
+    font-style: italic;
+  }
+
+  .tag-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: white;
+    border: 1px solid #ced4da;
+    border-radius: 8px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    z-index: 1000;
+    max-height: 200px;
+    overflow-y: auto;
+    display: none;
+  }
+
+  .tag-dropdown.show {
+    display: block;
+    animation: slideDown 0.2s ease;
+  }
+
+  @keyframes slideDown {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .tag-dropdown-header {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid #e9ecef;
+    background: #f8f9fa;
+  }
+
+  .tag-search-results {
+    max-height: 150px;
+    overflow-y: auto;
+  }
+
+  .tag-result-item {
+    padding: 0.5rem 0.75rem;
+    cursor: pointer;
+    border-bottom: 1px solid #f8f9fa;
+    transition: background-color 0.2s ease;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .tag-result-item:last-child {
+    border-bottom: none;
+  }
+
+  .tag-result-item:hover {
+    background-color: #f8f9fa;
+  }
+
+  .tag-result-item.selected {
+    background-color: #e7f3ff;
+    color: #0056b3;
+  }
+
+  .tag-result-item.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background-color: #f8f9fa;
+  }
+
+  .tag-name {
+    font-weight: 500;
+  }
+
+  .tag-count {
+    font-size: 0.75rem;
+    color: #6c757d;
+    background: #e9ecef;
+    padding: 0.125rem 0.375rem;
+    border-radius: 10px;
+  }
+
+  .no-results {
+    padding: 1rem;
+    text-align: center;
+    color: #6c757d;
+  }
+
+  .create-new-tag {
+    padding: 0.5rem 0.75rem;
+    border-top: 1px solid #e9ecef;
+    background: #f8f9fa;
+  }
+
+  .create-tag-btn {
+    width: 100%;
+    text-align: left;
+    border: 1px dashed #667eea;
+    color: #667eea;
+    background: transparent;
+    transition: all 0.3s ease;
+  }
+
+  .create-tag-btn:hover {
+    background: rgba(102, 126, 234, 0.1);
+    border-style: solid;
+  }
+
+  /* Legacy tag selection styling (hidden) */
+  .form-select[multiple] {
+    height: 120px;
+    padding: 0.5rem;
+  }
+
+  .tag-option {
+    padding: 0.25rem 0.5rem;
+    border-bottom: 1px solid #eee;
+  }
+
+  .tag-option:last-child {
+    border-bottom: none;
+  }
+
   @media (max-width: 768px) {
     .form-container {
       padding: 1.5rem;
@@ -270,6 +473,70 @@
         <ul class="mt-1 mb-0">
           <li><strong>Default:</strong> Uses best videos based on retention and quality</li>
           <li><strong>Live:</strong> High → Good → Low → Low pattern for live audience</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="mb-4">
+      <label class="form-label">
+        <i class="fas fa-tags me-2"></i>Tags Filter (optional)
+      </label>
+      
+      <!-- Enhanced Tag Search Interface -->
+      <div class="tag-search-container">
+        <!-- Tag Search Input -->
+        <div class="tag-search-input-wrapper mb-3">
+          <input type="text" 
+                 class="form-control tag-search-input" 
+                 id="tagSearchInput" 
+                 placeholder="Search or create tags..."
+                 autocomplete="off">
+          <div class="tag-search-icon">
+            <i class="fas fa-search"></i>
+          </div>
+        </div>
+
+        <!-- Selected Tags Display -->
+        <div class="selected-tags-container mb-3">
+          <div class="selected-tags-label">
+            <small class="text-muted">Selected Tags:</small>
+          </div>
+          <div id="selectedTags" class="selected-tags-display">
+            <!-- Selected tag chips will appear here -->
+          </div>
+          <div id="noTagsSelected" class="no-tags-selected">
+            <small class="text-muted">No tags selected - all videos will be included</small>
+          </div>
+        </div>
+
+        <!-- Tag Search Results/Dropdown -->
+        <div id="tagDropdown" class="tag-dropdown">
+          <div class="tag-dropdown-header">
+            <small class="text-muted">Available Tags</small>
+          </div>
+          <div id="tagSearchResults" class="tag-search-results">
+            <!-- Search results will appear here -->
+          </div>
+          <div id="noResults" class="no-results" style="display: none;">
+            <small class="text-muted">No tags found</small>
+          </div>
+        </div>
+
+        <!-- Create New Tag Option -->
+        <div id="createNewTag" class="create-new-tag" style="display: none;">
+          <button type="button" class="btn btn-outline-primary btn-sm create-tag-btn">
+            <i class="fas fa-plus me-1"></i>Create new tag: "<span id="newTagName"></span>"
+          </button>
+        </div>
+      </div>
+
+      <div class="form-text mt-2">
+        <strong>Tag selection:</strong>
+        <ul class="mt-1 mb-0">
+          <li>Search for existing tags or create new ones</li>
+          <li>Select multiple tags - videos must have at least one selected tag</li>
+          <li>Leave empty to use all available videos</li>
+          <li>Click on tag chips to remove them</li>
         </ul>
       </div>
     </div>
@@ -369,10 +636,21 @@
     const fromDateInput = document.getElementById('fromDate');
     const toDateInput = document.getElementById('toDate');
     const compilationTypeSelect = document.getElementById('compilationType');
+    // Enhanced Tag Management
+    const tagSearchInput = document.getElementById('tagSearchInput');
+    const tagDropdown = document.getElementById('tagDropdown');
+    const tagSearchResults = document.getElementById('tagSearchResults');
+    const selectedTagsDisplay = document.getElementById('selectedTags');
+    const noTagsSelected = document.getElementById('noTagsSelected');
+    const createNewTag = document.getElementById('createNewTag');
+    const newTagName = document.getElementById('newTagName');
 
-    // Track preview state
+    // Track preview state and tag data
     let previewGenerated = false;
     let isFormSubmitting = false;
+    let availableTags = [];
+    let selectedTags = [];
+    let searchTimeout;
 
     // Validation function
     function validateForm() {
@@ -438,6 +716,61 @@
       }
     });
 
+    // Enhanced Tag Search Event Listeners
+    tagSearchInput.addEventListener('input', function (e) {
+      const searchTerm = e.target.value.trim();
+      
+      // Clear previous timeout
+      clearTimeout(searchTimeout);
+      
+      if (searchTerm.length >= 2) {
+        // Search for tags with debounce
+        searchTimeout = setTimeout(() => {
+          searchTags(searchTerm);
+        }, 300);
+      } else if (searchTerm.length === 0) {
+        // Show all available tags when input is cleared
+        showAllTags();
+      } else {
+        hideTagDropdown();
+      }
+    });
+
+    tagSearchInput.addEventListener('focus', function () {
+      const searchTerm = tagSearchInput.value.trim();
+      if (searchTerm.length >= 2) {
+        searchTags(searchTerm);
+      } else {
+        showAllTags();
+      }
+    });
+
+    // Hide dropdown when clicking outside
+    document.addEventListener('click', function (e) {
+      if (!e.target.closest('.tag-search-container')) {
+        hideTagDropdown();
+      }
+    });
+
+    // Handle enter key in search input
+    tagSearchInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const searchTerm = tagSearchInput.value.trim();
+        if (searchTerm && !selectedTags.includes(searchTerm)) {
+          addTag(searchTerm);
+          tagSearchInput.value = '';
+          hideTagDropdown();
+        }
+      } else if (e.key === 'Escape') {
+        hideTagDropdown();
+        tagSearchInput.blur();
+      }
+    });
+
+    // Load available tags
+    loadAvailableTags();
+
     // Initial button state update
     updateButtonStates();
 
@@ -462,7 +795,8 @@
         duration: duration,
         compilation_type: compilationTypeSelect.value,
         from_date: fromDateInput.value || null,
-        to_date: toDateInput.value || null
+        to_date: toDateInput.value || null,
+        tags: selectedTags
       };
 
       fetch('/api/compilation-preview', {
@@ -533,6 +867,7 @@
         compilation_type: compilationTypeSelect.value,
         from_date: fromDateInput.value || null,
         to_date: toDateInput.value || null,
+        tags: selectedTags,
         user_id: 'system' // In production, get from session
       };
 
@@ -649,6 +984,139 @@
       if (score >= 4) return 'Fair';
       return 'Poor';
     }
+
+    // Enhanced Tag Management Functions
+    function loadAvailableTags() {
+      fetch('/api/tags/all', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      })
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          return response.json();
+        })
+        .then(data => {
+          availableTags = data.tags || [];
+          console.log('Loaded tags:', availableTags);
+        })
+        .catch(error => {
+          console.error('Error loading tags:', error);
+          // Fallback to a basic tag list if API fails
+          availableTags = ['kids', 'songs', 'education', 'compilation', 'alphabet', 'birthday', 'celebration'];
+        });
+    }
+
+    function searchTags(searchTerm) {
+      // Use the search API endpoint for better results
+      fetch(`/api/tags/search?query=${encodeURIComponent(searchTerm)}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      })
+        .then(response => response.json())
+        .then(data => {
+          const tags = data.tags || [];
+          displayTagResults(tags, searchTerm);
+        })
+        .catch(error => {
+          console.error('Error searching tags:', error);
+          // Fallback to client-side filtering
+          const filteredTags = availableTags.filter(tag => 
+            tag.toLowerCase().includes(searchTerm.toLowerCase())
+          );
+          displayTagResults(filteredTags, searchTerm);
+        });
+    }
+
+    function showAllTags() {
+      displayTagResults(availableTags, '');
+    }
+
+    function displayTagResults(tags, searchTerm) {
+      tagSearchResults.innerHTML = '';
+      const filteredTags = tags.filter(tag => !selectedTags.includes(tag));
+      
+      if (filteredTags.length === 0) {
+        document.getElementById('noResults').style.display = 'block';
+        createNewTag.style.display = searchTerm && !availableTags.includes(searchTerm) ? 'block' : 'none';
+      } else {
+        document.getElementById('noResults').style.display = 'none';
+        createNewTag.style.display = 'none';
+        
+        filteredTags.forEach(tag => {
+          const tagElement = document.createElement('div');
+          tagElement.className = 'tag-result-item';
+          tagElement.innerHTML = `
+            <span class="tag-name">${highlightSearchTerm(tag, searchTerm)}</span>
+            <span class="tag-count">available</span>
+          `;
+          tagElement.addEventListener('click', () => addTag(tag));
+          tagSearchResults.appendChild(tagElement);
+        });
+      }
+      
+      tagDropdown.classList.add('show');
+    }
+
+    function highlightSearchTerm(text, searchTerm) {
+      if (!searchTerm) return text;
+      const regex = new RegExp(`(${searchTerm})`, 'gi');
+      return text.replace(regex, '<strong>$1</strong>');
+    }
+
+    function addTag(tag) {
+      if (!selectedTags.includes(tag)) {
+        selectedTags.push(tag);
+        updateSelectedTagsDisplay();
+        updateFormState();
+      }
+      tagSearchInput.value = '';
+      hideTagDropdown();
+    }
+
+    function removeTag(tag) {
+      selectedTags = selectedTags.filter(t => t !== tag);
+      updateSelectedTagsDisplay();
+      updateFormState();
+    }
+
+    function updateSelectedTagsDisplay() {
+      selectedTagsDisplay.innerHTML = '';
+      
+      if (selectedTags.length > 0) {
+        noTagsSelected.style.display = 'none';
+        selectedTags.forEach(tag => {
+          const tagChip = document.createElement('span');
+          tagChip.className = 'selected-tag-chip';
+          tagChip.innerHTML = `
+            ${tag}
+            <i class="fas fa-times remove-tag" title="Remove tag"></i>
+          `;
+          tagChip.addEventListener('click', () => removeTag(tag));
+          selectedTagsDisplay.appendChild(tagChip);
+        });
+      } else {
+        noTagsSelected.style.display = 'block';
+      }
+    }
+
+    function hideTagDropdown() {
+      tagDropdown.classList.remove('show');
+      createNewTag.style.display = 'none';
+    }
+
+    // Create new tag functionality
+    document.querySelector('.create-tag-btn').addEventListener('click', function () {
+      const searchTerm = tagSearchInput.value.trim();
+      if (searchTerm && !selectedTags.includes(searchTerm)) {
+        addTag(searchTerm);
+      }
+    });
   });
 </script>
 {% endblock %}

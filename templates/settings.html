@@ -1,0 +1,243 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - Video Analytics{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col-12">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h1 class="mb-0">
+        <i class="fas fa-cog me-2"></i>Settings
+      </h1>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <!-- Settings Navigation -->
+  <div class="col-md-3">
+    <div class="card">
+      <div class="card-body">
+        <div class="nav flex-column nav-pills" role="tablist">
+          <button class="nav-link active" data-bs-toggle="pill" data-bs-target="#blacklist" type="button" role="tab">
+            <i class="fas fa-ban me-2"></i>Video Blacklist
+          </button>
+          <button class="nav-link" data-bs-toggle="pill" data-bs-target="#general" type="button" role="tab">
+            <i class="fas fa-sliders-h me-2"></i>General Settings
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Content -->
+  <div class="col-md-9">
+    <div class="tab-content">
+      <!-- Video Blacklist Tab -->
+      <div class="tab-pane fade show active" id="blacklist" role="tabpanel">
+        <div class="card">
+          <div class="card-header">
+            <h5 class="mb-0">
+              <i class="fas fa-ban me-2"></i>Video Blacklist
+              <small class="text-muted">Videos that cannot be used in compilations</small>
+            </h5>
+          </div>
+          <div class="card-body">
+            <!-- Add to Blacklist Form -->
+            <div class="row mb-4">
+              <div class="col-md-8">
+                <label for="blacklistVideoId" class="form-label">Add Video ID to Blacklist</label>
+                <input type="text" class="form-control" id="blacklistVideoId" placeholder="Enter video ID...">
+              </div>
+              <div class="col-md-4 d-flex align-items-end">
+                <button type="button" class="btn btn-primary w-100" onclick="addToBlacklist()">
+                  <i class="fas fa-plus me-1"></i>Add to Blacklist
+                </button>
+              </div>
+            </div>
+
+            <!-- Current Blacklisted Videos -->
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <h6 class="mb-0">Blacklisted Videos ({{ blacklisted_videos|length }})</h6>
+              <button type="button" class="btn btn-sm btn-outline-danger" onclick="clearBlacklist()" {% if not blacklisted_videos %}disabled{% endif %}>
+                <i class="fas fa-trash me-1"></i>Clear All
+              </button>
+            </div>
+
+            <div class="table-responsive">
+              <table class="table table-hover">
+                <thead class="table-dark">
+                  <tr>
+                    <th style="width: 120px;">Video ID</th>
+                    <th style="width: 300px;">Title</th>
+                    <th style="width: 120px;">Added Date</th>
+                    <th style="width: 100px;">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% if blacklisted_videos %}
+                    {% for item in blacklisted_videos %}
+                    <tr>
+                      <td>
+                        <code class="small">{{ item.video_id }}</code>
+                      </td>
+                      <td>
+                        <div class="text-truncate" style="max-width: 300px;" title="{{ item.title }}">
+                          {{ item.title|default('Unknown Title') }}
+                        </div>
+                      </td>
+                      <td>
+                        <small>{{ item.added_date.strftime('%Y-%m-%d %H:%M') if item.added_date else 'Unknown' }}</small>
+                      </td>
+                      <td>
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeFromBlacklist('{{ item.video_id }}')">
+                          <i class="fas fa-trash"></i>
+                        </button>
+                      </td>
+                    </tr>
+                    {% endfor %}
+                  {% else %}
+                    <tr>
+                      <td colspan="4" class="text-center text-muted py-4">
+                        <i class="fas fa-info-circle me-2"></i>No videos in blacklist
+                      </td>
+                    </tr>
+                  {% endif %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- General Settings Tab -->
+      <div class="tab-pane fade" id="general" role="tabpanel">
+        <div class="card">
+          <div class="card-header">
+            <h5 class="mb-0">
+              <i class="fas fa-sliders-h me-2"></i>General Settings
+            </h5>
+          </div>
+          <div class="card-body">
+            <div class="row">
+              <div class="col-md-6">
+                <h6>Compilation Settings</h6>
+                <div class="mb-3">
+                  <label class="form-label">Maximum Video Duration (seconds)</label>
+                  <input type="number" class="form-control" value="300" readonly>
+                  <div class="form-text">Videos longer than this will be excluded from compilations</div>
+                </div>
+                <div class="mb-3">
+                  <label class="form-label">Maximum Annual Usage</label>
+                  <input type="number" class="form-control" value="10" readonly>
+                  <div class="form-text">Maximum times a video can be used in compilations per year</div>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <h6>System Information</h6>
+                <div class="mb-3">
+                  <label class="form-label">Database Status</label>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" checked disabled>
+                    <label class="form-check-label text-success">
+                      Connected
+                    </label>
+                  </div>
+                </div>
+                <div class="mb-3">
+                  <label class="form-label">Total Videos</label>
+                  <input type="text" class="form-control" value="{{ total_videos }}" readonly>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  function addToBlacklist() {
+    const videoId = document.getElementById('blacklistVideoId').value.trim();
+    
+    if (!videoId) {
+      alert('Please enter a video ID');
+      return;
+    }
+
+    fetch('/api/settings/blacklist', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ video_id: videoId })
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        location.reload(); // Refresh to show the new entry
+      } else {
+        alert('Failed to add video to blacklist: ' + (data.error || 'Unknown error'));
+      }
+    })
+    .catch(error => {
+      console.error('Error adding to blacklist:', error);
+      alert('Failed to add video to blacklist: ' + error.message);
+    });
+  }
+
+  function removeFromBlacklist(videoId) {
+    if (!confirm(`Remove video ${videoId} from blacklist?`)) {
+      return;
+    }
+
+    fetch(`/api/settings/blacklist/${encodeURIComponent(videoId)}`, {
+      method: 'DELETE'
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        location.reload(); // Refresh to remove the entry
+      } else {
+        alert('Failed to remove video from blacklist: ' + (data.error || 'Unknown error'));
+      }
+    })
+    .catch(error => {
+      console.error('Error removing from blacklist:', error);
+      alert('Failed to remove video from blacklist: ' + error.message);
+    });
+  }
+
+  function clearBlacklist() {
+    if (!confirm('Are you sure you want to clear the entire blacklist? This action cannot be undone.')) {
+      return;
+    }
+
+    fetch('/api/settings/blacklist/clear', {
+      method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        location.reload(); // Refresh to show empty blacklist
+      } else {
+        alert('Failed to clear blacklist: ' + (data.error || 'Unknown error'));
+      }
+    })
+    .catch(error => {
+      console.error('Error clearing blacklist:', error);
+      alert('Failed to clear blacklist: ' + error.message);
+    });
+  }
+
+  // Handle enter key in video ID input
+  document.getElementById('blacklistVideoId').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+      addToBlacklist();
+    }
+  });
+</script>
+{% endblock %}

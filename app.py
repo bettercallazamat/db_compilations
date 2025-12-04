@@ -76,6 +76,8 @@ def index():
     search_query = request.args.get('search', '')
     actor_filter = request.args.get('actor')
     compilation_filter = request.args.get('compilation')
+    retention_filter = request.args.get('retention')
+    tag_filter = request.args.get('tag')
 
     # Build MongoDB query
     query = {}
@@ -95,6 +97,17 @@ def index():
     elif compilation_filter == 'false':
         query['is_compilation'] = False
 
+    if retention_filter:
+        if retention_filter == 'high':
+            query['retention_30s'] = {'$gte': 70}
+        elif retention_filter == 'medium':
+            query['retention_30s'] = {'$gte': 50, '$lt': 70}
+        elif retention_filter == 'low':
+            query['retention_30s'] = {'$lt': 50}
+
+    if tag_filter:
+        query['tags'] = tag_filter
+
     # Get total count for pagination
     total = videos_collection.count_documents(query)
 
@@ -109,6 +122,12 @@ def index():
     has_prev = page > 1
     has_next = page < total_pages
 
+    # Get available tags for filter dropdown
+    available_tags = get_available_tags()
+
+    # Get quick stats for dashboard
+    quick_stats = get_quick_stats()
+
     return render_template('index.html',
                            videos=videos,
                            page=page,
@@ -117,13 +136,60 @@ def index():
                            has_next=has_next,
                            search_query=search_query,
                            actor_filter=actor_filter,
-                           compilation_filter=compilation_filter)
+                           compilation_filter=compilation_filter,
+                           retention_filter=retention_filter,
+                           tag_filter=tag_filter,
+                           available_tags=available_tags,
+                           quick_stats=quick_stats)
+
+
+def get_available_tags():
+    """Get all available tags for filter dropdown"""
+    pipeline = [
+        {'$unwind': '$tags'},
+        {'$group': {'_id': '$tags', 'count': {'$sum': 1}}},
+        {'$sort': {'count': -1, '_id': 1}}
+    ]
+    
+    results = list(videos_collection.aggregate(pipeline))
+    return [result['_id'] for result in results]
+
+
+def get_quick_stats():
+    """Get quick statistics for dashboard"""
+    # Total videos
+    total_videos = videos_collection.count_documents({})
+    
+    # Total compilations
+    compilations = videos_collection.count_documents({'is_compilation': True})
+    
+    # High retention videos (70%+)
+    high_retention = videos_collection.count_documents({'retention_30s': {'$gte': 70}})
+    
+    # User compilations (would need user_compilations collection)
+    user_compilations = 0
+    try:
+        user_compilations = mongo.db.user_compilations.count_documents({})
+    except:
+        pass  # Collection might not exist yet
+    
+    return {
+        'total_videos': total_videos,
+        'compilations': compilations,
+        'high_retention': high_retention,
+        'user_compilations': user_compilations
+    }
 
 
 @app.route('/video/<video_id>')
 def video_detail(video_id):
     """Show detailed view of a single video"""
-    video = videos_collection.find_one({'_id': ObjectId(video_id)})
+    # Try to find by ObjectId first, then by video_id
+    try:
+        video = videos_collection.find_one({'_id': ObjectId(video_id)})
+    except:
+        video = videos_collection.find_one({'video_id': video_id})
+    
     if not video:
         return "Video not found", 404
     return render_template('video_detail.html', video=video)
@@ -253,6 +319,133 @@ def api_update_video(video_id):
     return jsonify({'error': 'No valid fields to update'}), 400
 
 
+@app.route('/api/tags/search')
+def api_search_tags():
+    """API endpoint to search for existing tags"""
+    query = request.args.get('query', '').strip()
+    if not query:
+        return jsonify({'tags': []})
+
+    # Search for tags that contain the query
+    pipeline = [
+        {'$unwind': '$tags'},
+        {'$match': {'tags': {'$regex': query, '$options': 'i'}}},
+        {'$group': {'_id': '$tags', 'count': {'$sum': 1}}},
+        {'$sort': {'count': -1, '_id': 1}},
+        {'$limit': 10}
+    ]
+
+    results = list(videos_collection.aggregate(pipeline))
+    tags = [result['_id'] for result in results]
+
+    return jsonify({'tags': tags})
+
+
+@app.route('/api/tags/all')
+def api_get_all_tags():
+    """API endpoint to get all available tags without query requirement"""
+    # Get all unique tags with their counts
+    pipeline = [
+        {'$unwind': '$tags'},
+        {'$group': {'_id': '$tags', 'count': {'$sum': 1}}},
+        {'$sort': {'count': -1, '_id': 1}}
+    ]
+
+    results = list(videos_collection.aggregate(pipeline))
+    tags = [result['_id'] for result in results if result['_id']]  # Filter out empty tags
+
+    return jsonify({'tags': tags})
+
+
+@app.route('/api/video/<video_id>/tags', methods=['POST'])
+def api_add_tag(video_id):
+    """API endpoint to add a tag to a video"""
+    data = request.get_json()
+    tag = data.get('tag', '').strip()
+    
+    if not tag:
+        return jsonify({'error': 'Tag cannot be empty'}), 400
+
+    # Find the video first
+    video = videos_collection.find_one({'video_id': video_id})
+    if not video:
+        return jsonify({'error': 'Video not found'}), 404
+
+    # Get current tags or initialize empty list
+    current_tags = video.get('tags', [])
+    
+    # Check if tag already exists
+    if tag in current_tags:
+        return jsonify({'error': 'Tag already exists'}), 400
+
+    # Add the new tag
+    current_tags.append(tag)
+    
+    result = videos_collection.update_one(
+        {'video_id': video_id},
+        {
+            '$set': {
+                'tags': current_tags,
+                'updated_at': datetime.utcnow()
+            }
+        }
+    )
+
+    if result.matched_count:
+        return jsonify({'success': True})
+    else:
+        return jsonify({'error': 'Failed to add tag'}), 500
+
+
+@app.route('/api/video/<video_id>/tags/<tag>', methods=['DELETE'])
+def api_remove_tag(video_id, tag):
+    """API endpoint to remove a tag from a video"""
+    # URL decode the tag
+    import urllib.parse
+    tag = urllib.parse.unquote(tag)
+
+    # Find the video first
+    video = videos_collection.find_one({'video_id': video_id})
+    if not video:
+        return jsonify({'error': 'Video not found'}), 404
+
+    # Get current tags
+    current_tags = video.get('tags', [])
+    
+    # Check if tag exists
+    if tag not in current_tags:
+        return jsonify({'error': 'Tag not found'}), 404
+
+    # Remove the tag
+    current_tags.remove(tag)
+    
+    result = videos_collection.update_one(
+        {'video_id': video_id},
+        {
+            '$set': {
+                'tags': current_tags,
+                'updated_at': datetime.utcnow()
+            }
+        }
+    )
+
+    if result.matched_count:
+        return jsonify({'success': True})
+    else:
+        return jsonify({'error': 'Failed to remove tag'}), 500
+
+
+@app.route('/api/video/<video_id>/tags')
+def api_get_tags(video_id):
+    """API endpoint to get all tags for a video"""
+    video = videos_collection.find_one({'video_id': video_id})
+    if not video:
+        return jsonify({'error': 'Video not found'}), 404
+
+    tags = video.get('tags', [])
+    return jsonify({'tags': tags})
+
+
 @app.route('/stats')
 def stats():
     """Show statistics about the video collection"""
@@ -290,4 +483,4 @@ def stats():
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, port=5001)

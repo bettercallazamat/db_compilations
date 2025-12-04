@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple, Optional, Any
 from bson.objectid import ObjectId
 import math
 from enum import Enum
@@ -29,10 +29,11 @@ class CompilationCreator:
     publication dates, and duration constraints.
     """
 
-    def __init__(self, videos_collection, compilations_collection, user_compilations_collection):
+    def __init__(self, videos_collection, compilations_collection, user_compilations_collection, blacklist_collection=None):
         self.videos_collection = videos_collection
         self.compilations_collection = compilations_collection
         self.user_compilations_collection = user_compilations_collection
+        self.blacklist_collection = blacklist_collection
 
         # Initialize VideoUsageTracker to update stats after compilation creation
         self.usage_tracker = VideoUsageTracker(
@@ -50,6 +51,18 @@ class CompilationCreator:
         self.RETENTION_WEIGHT = 0.6  # Weight factor for retention rate in scoring algorithm
         self.VIEW_COUNT_WEIGHT = 0.1  # Weight factor for view count in scoring algorithm
         self.FRESHNESS_WEIGHT = 0.1  # Weight factor for video freshness in scoring algorithm
+
+    def get_blacklisted_video_ids(self) -> set:
+        """Get set of blacklisted video IDs"""
+        if self.blacklist_collection is None:
+            return set()
+        
+        try:
+            blacklisted_items = list(self.blacklist_collection.find({}, {'video_id': 1}))
+            return {item['video_id'] for item in blacklisted_items}
+        except Exception as e:
+            print(f"Error fetching blacklist: {e}")
+            return set()
 
     def get_available_durations(self) -> List[int]:
         """
@@ -78,7 +91,7 @@ class CompilationCreator:
         return sorted(durations)
 
     def categorize_videos_by_retention(self, videos: List[Dict], from_date: Optional[str] = None,
-                                      to_date: Optional[str] = None) -> Dict[VideoCategory, List[Dict]]:
+                                      to_date: Optional[str] = None, tags: Optional[List[str]] = None) -> Dict[VideoCategory, List[Dict]]:
         """
         Categorize videos into retention rate percentiles with sophisticated filtering
         and sorting algorithms to ensure optimal video selection.
@@ -87,11 +100,15 @@ class CompilationCreator:
             videos: List of video documents from database
             from_date: Optional start date filter in 'YYYY-MM-DD' format
             to_date: Optional end date filter in 'YYYY-MM-DD' format
+            tags: Optional list of tags to filter videos by (videos must have at least one tag)
 
         Returns:
             Dict mapping video categories to sorted lists of videos
         """
         
+        # Get blacklisted video IDs
+        blacklisted_ids = self.get_blacklisted_video_ids()
+
         # Add these counters at the beginning
         filter_stats = {
             'total_videos': len(videos),
@@ -102,6 +119,7 @@ class CompilationCreator:
             'filtered_date': 0,
             'filtered_usage_limit': 0,
             'filtered_missing_metrics': 0,
+            'filtered_blacklist': 0,
             'passed_all_filters': 0
         }
 
@@ -109,6 +127,12 @@ class CompilationCreator:
         current_date = datetime.utcnow()
 
         for video in videos:
+            # Skip blacklisted videos
+            video_id = video.get('video_id', '')
+            if video_id in blacklisted_ids:
+                filter_stats['filtered_blacklist'] += 1
+                continue
+
             # Skip compilation videos - multiple checks for robustness
             if video.get('is_compilation', False):
                 filter_stats['filtered_compilation_flag'] += 1
@@ -132,6 +156,14 @@ class CompilationCreator:
                     video_duration == 0):
                 filter_stats['filtered_duration'] += 1
                 continue
+
+            # Apply tag filter if specified
+            if tags and tags:
+                video_tags = video.get('tags', [])
+                # Check if video has at least one of the selected tags
+                has_selected_tag = any(tag in video_tags for tag in tags)
+                if not has_selected_tag:
+                    continue
 
             # Apply date range filter if specified
             if from_date or to_date:
@@ -244,7 +276,7 @@ class CompilationCreator:
         return categories
 
     def categorize_videos_for_preview(self, videos: List[Dict], from_date: Optional[str] = None,
-                                      to_date: Optional[str] = None) -> Dict[str, int]:
+                                      to_date: Optional[str] = None, tags: Optional[List[str]] = None) -> Dict[str, int]:
         """
         Categorize videos by retention_30s for preview display only.
         Returns counts for High (>75%), Good (>50%), Fair (>25%), Low (<25%)
@@ -275,6 +307,14 @@ class CompilationCreator:
                 video_duration < self.MIN_VIDEO_DURATION_SECONDS or
                     video_duration == 0):
                 continue
+
+            # Apply tag filter if specified
+            if tags and tags:
+                video_tags = video.get('tags', [])
+                # Check if video has at least one of the selected tags
+                has_selected_tag = any(tag in video_tags for tag in tags)
+                if not has_selected_tag:
+                    continue
 
             # Apply date range filter if specified
             if from_date or to_date:
@@ -337,6 +377,12 @@ class CompilationCreator:
         Select the optimal first video for a compilation using advanced selection criteria.
         The first video is crucial as it determines viewer engagement and retention.
         
+        Enforces specific constraints:
+        1. If a video was used as first video in X-minute compilation, it cannot be used 
+           in X-minute compilations for next 365 days
+        2. Videos can be used in compilations with different durations
+        3. Each video can only be used once as first video per duration per year
+        
         Args:
             duration_rounded: Target compilation duration
             categorized_videos: Videos categorized by retention percentiles
@@ -382,43 +428,59 @@ class CompilationCreator:
             if not valid_candidates:
                 continue
 
-            # First pass: Look for videos never used as first video for this duration
-            never_used_videos = []
-            min_usage_videos = []
-            
-            for video in valid_candidates:
-                usage_stats = video.get('compilation_usage_stats', {})
-                first_video_by_duration = usage_stats.get(
-                    'first_video_by_duration', {})
-                usage_count = first_video_by_duration.get(duration_key, 0)
+            # Apply 365-day constraint logic for first video selection
+            eligible_videos = self._filter_videos_by_365_day_constraint(
+                valid_candidates, duration_key)
 
-                # Separate videos by usage count
-                if usage_count == 0:
-                    never_used_videos.append(video)
-                else:
-                    min_usage_videos.append((video, usage_count))
+            if not eligible_videos:
+                continue
 
-            # If there are videos never used, randomly select from them
-            if never_used_videos:
-                import random
-                return random.choice(never_used_videos)
-
-            # Second pass: If no never-used videos, find the least used ones
-            # Sort by usage count (ascending) to get least used first
-            min_usage_videos.sort(key=lambda x: x[1])  # Sort by usage count
-            
-            # Get the minimum usage count
-            if min_usage_videos:
-                min_usage = min_usage_videos[0][1]
-                least_used_videos = [video for video, count in min_usage_videos if count == min_usage]
-                
-                # Randomly select from the least used videos
-                import random
-                selected_video = random.choice(least_used_videos)
-                return selected_video
+            # If there are eligible videos, randomly select from them
+            import random
+            return random.choice(eligible_videos)
 
         # If we get here, no suitable video was found in any category
         return None
+
+    def _filter_videos_by_365_day_constraint(self, candidates: List[Dict], duration_key: str) -> List[Dict]:
+        """
+        Filter videos based on 365-day usage constraint for first video selection.
+        
+        Constraint Logic:
+        1. If video was used as first video in X-minute compilation, 
+           it cannot be used in X-minute compilations for next 365 days
+        2. Videos can be used in compilations with different durations
+        3. Only include videos that haven't been used as first video for this duration in last 365 days
+        
+        Args:
+            candidates: List of candidate videos
+            duration_key: Duration key (e.g., "25min", "30min")
+            
+        Returns:
+            Filtered list of eligible videos
+        """
+        one_year_ago = datetime.utcnow() - timedelta(days=365)
+        eligible_videos = []
+        
+        for video in candidates:
+            usage_stats = video.get('compilation_usage_stats', {})
+            first_video_by_duration = usage_stats.get('first_video_by_duration', {})
+            first_video_last_used_by_duration = usage_stats.get('first_video_last_used_by_duration', {})
+            
+            usage_count = first_video_by_duration.get(duration_key, 0)
+            last_used_date = first_video_last_used_by_duration.get(duration_key)
+            
+            # Check if video was used as first video within last 365 days
+            was_used_recently = False
+            if last_used_date and isinstance(last_used_date, datetime):
+                if last_used_date > one_year_ago:
+                    was_used_recently = True
+            
+            # Only include videos that haven't been used as first video in last 365 days
+            if not was_used_recently:
+                eligible_videos.append(video)
+        
+        return eligible_videos
 
     def calculate_compilation_duration_seconds(self, selected_videos: List[Dict]) -> int:
         """
@@ -717,7 +779,8 @@ class CompilationCreator:
         return selected_videos
 
     def create_compilation(self, duration_minutes: int, from_date: Optional[str] = None,
-                           to_date: Optional[str] = None, title_prefix: str = "Auto-Generated",
+                           to_date: Optional[str] = None, tags: Optional[List[str]] = None,
+                           title_prefix: str = "Auto-Generated",
                            user_id: str = "system", compilation_type: str = "default", return_compilation_doc: bool = False) -> Dict:
         """
         Create a new compilation with sophisticated video selection and metadata generation.
@@ -727,6 +790,7 @@ class CompilationCreator:
             duration_minutes: Target duration in minutes (will be rounded to nearest 5)
             from_date: Optional start date filter in 'YYYY-MM-DD' format
             to_date: Optional end date filter in 'YYYY-MM-DD' format
+            tags: Optional list of tags to filter videos by (videos must have at least one tag)
             title_prefix: Prefix for the generated compilation title
             user_id: ID of the user creating the compilation
             compilation_type: Type of compilation ('default' or 'live')
@@ -750,9 +814,9 @@ class CompilationCreator:
                 'compilation_id': None
             }
 
-        # Categorize videos by retention rate with date filtering
+        # Categorize videos by retention rate with date and tag filtering
         categorized_videos = self.categorize_videos_by_retention(
-            all_videos, from_date, to_date)
+            all_videos, from_date, to_date, tags)
 
         # Check if any videos are available after filtering
         total_available = sum(len(videos)
@@ -794,6 +858,23 @@ class CompilationCreator:
         # Calculate actual total duration
         actual_duration_seconds = self.calculate_compilation_duration_seconds(
             selected_videos)
+
+        # Ensure first video in compilation cannot have actor status checked
+        first_video_id = selected_videos[0]['video_id']
+        first_video = self.videos_collection.find_one({'video_id': first_video_id})
+        
+        if first_video and first_video.get('actor', False):
+            # Set actor status to False for first video in compilation
+            self.videos_collection.update_one(
+                {'video_id': first_video_id},
+                {
+                    '$set': {
+                        'actor': False,
+                        'updated_at': datetime.utcnow()
+                    }
+                }
+            )
+            print(f"⚠️  Set actor status to False for first video in compilation: {first_video.get('title', 'Unknown')}")
 
         # Generate compilation metadata
         compilation_doc = self._generate_compilation_document(
@@ -1103,7 +1184,7 @@ class CompilationCreator:
             return False
 
     def delete_compilation(self, compilation_id: str) -> bool:
-        """Delete a compilation (only if not published)"""
+        """Delete a compilation and update video usage statistics"""
         try:
             compilation = self.user_compilations_collection.find_one({
                 '_id': ObjectId(compilation_id)
@@ -1116,9 +1197,25 @@ class CompilationCreator:
             # if compilation.get('status') == CompilationStatus.PUBLISHED.value:
             #     return False
 
+            # Extract video IDs from the compilation before deleting it
+            video_ids_in_compilation = []
+            for timestamp in compilation.get('timestamps', []):
+                if timestamp.get('video_id'):
+                    video_ids_in_compilation.append(timestamp['video_id'])
+
+            # Delete the compilation
             result = self.user_compilations_collection.delete_one({
                 '_id': ObjectId(compilation_id)
             })
+
+            if result.deleted_count > 0 and video_ids_in_compilation:
+                # Update usage statistics for all videos that were in this compilation
+                try:
+                    for video_id in video_ids_in_compilation:
+                        self.usage_tracker.update_video_usage_stats(video_id)
+                except Exception as stats_error:
+                    # Log stats update error but don't fail the deletion
+                    print(f"Warning: Failed to update usage stats after compilation deletion: {stats_error}")
 
             return result.deleted_count > 0
 
@@ -1172,3 +1269,216 @@ class CompilationCreator:
             print(f"  {range_name}: {count}")
 
         return duration_ranges
+
+    def validate_compilation_constraints(self, selected_videos: List[Dict], duration_rounded: int) -> Dict[str, Any]:
+        """
+        Comprehensive validation of compilation constraints to ensure compliance
+        with the 365-day rule and cross-duration usage rules.
+        
+        Args:
+            selected_videos: List of videos in the compilation
+            duration_rounded: Target duration in minutes
+            
+        Returns:
+            Dict with validation results and detailed information
+        """
+        validation_result = {
+            'valid': True,
+            'errors': [],
+            'warnings': [],
+            'constraints_checked': {
+                'first_video_365_day_rule': None,
+                'cross_duration_usage': [],
+                'first_video_usage_counts': {},
+                'total_videos_used': len(selected_videos)
+            },
+            'recommendations': []
+        }
+        
+        if not selected_videos:
+            validation_result['valid'] = False
+            validation_result['errors'].append("No videos provided for validation")
+            return validation_result
+        
+        duration_key = f"{duration_rounded}min"
+        first_video = selected_videos[0]
+        first_video_id = first_video.get('video_id')
+        one_year_ago = datetime.utcnow() - timedelta(days=365)
+        
+        # Validate first video 365-day constraint
+        usage_stats = first_video.get('compilation_usage_stats', {})
+        first_video_by_duration = usage_stats.get('first_video_by_duration', {})
+        first_video_last_used_by_duration = usage_stats.get('first_video_last_used_by_duration', {})
+        
+        usage_count = first_video_by_duration.get(duration_key, 0)
+        last_used_date = first_video_last_used_by_duration.get(duration_key)
+        
+        # Check if first video violates 365-day rule
+        was_used_recently = False
+        if last_used_date and isinstance(last_used_date, datetime):
+            if last_used_date > one_year_ago:
+                was_used_recently = True
+                validation_result['valid'] = False
+                validation_result['errors'].append(
+                    f"First video '{first_video.get('title', 'Unknown')}' was used as first video in "
+                    f"{duration_key} compilation on {last_used_date.strftime('%Y-%m-%d')}. "
+                    f"Cannot be used again until {one_year_ago.strftime('%Y-%m-%d')}"
+                )
+        
+        validation_result['constraints_checked']['first_video_365_day_rule'] = {
+            'violated': was_used_recently,
+            'usage_count': usage_count,
+            'last_used_date': last_used_date.isoformat() if last_used_date else None,
+            'eligible_after': (last_used_date + timedelta(days=365)).isoformat() if last_used_date else None
+        }
+        
+        # Check cross-duration usage
+        for video in selected_videos:
+            video_id = video.get('video_id')
+            video_title = video.get('title', 'Unknown')
+            video_usage_stats = video.get('compilation_usage_stats', {})
+            
+            video_usage_by_duration = video_usage_stats.get('usage_by_duration', {})
+            video_first_video_by_duration = video_usage_stats.get('first_video_by_duration', {})
+            
+            # Check usage counts across all durations
+            duration_usage = []
+            for dur_key, count in video_usage_by_duration.items():
+                if count > 0:
+                    duration_usage.append({
+                        'duration': dur_key,
+                        'total_usage_count': count,
+                        'first_video_count': video_first_video_by_duration.get(dur_key, 0),
+                        'is_current_duration': dur_key == duration_key
+                    })
+            
+            if duration_usage:
+                validation_result['constraints_checked']['cross_duration_usage'].append({
+                    'video_id': video_id,
+                    'video_title': video_title,
+                    'position_in_compilation': selected_videos.index(video) + 1,
+                    'usage_by_duration': duration_usage
+                })
+        
+        # Check for potential issues
+        for video_data in validation_result['constraints_checked']['cross_duration_usage']:
+            video_id = video_data['video_id']
+            current_duration_usage = None
+            
+            for dur_usage in video_data['usage_by_duration']:
+                if dur_usage['is_current_duration']:
+                    current_duration_usage = dur_usage
+                    break
+            
+            # Check if video is overused in current duration
+            if current_duration_usage and current_duration_usage['total_usage_count'] >= self.MAX_ANNUAL_USAGE:
+                validation_result['warnings'].append(
+                    f"Video '{video_data['video_title']}' has been used "
+                    f"{current_duration_usage['total_usage_count']} times in {duration_key} compilations "
+                    f"and is approaching the annual limit of {self.MAX_ANNUAL_USAGE}"
+                )
+        
+        # Generate recommendations
+        if not was_used_recently and usage_count == 0:
+            validation_result['recommendations'].append(
+                f"First video '{first_video.get('title', 'Unknown')}' has never been used as first video "
+                f"in {duration_key} compilations - excellent choice for engagement"
+            )
+        
+        # Check if we have enough variety in video sources
+        total_unique_videos_used = len(set(video.get('video_id') for video in selected_videos))
+        if total_unique_videos_used < len(selected_videos):
+            validation_result['warnings'].append("Duplicate videos detected in compilation")
+        
+        return validation_result
+
+    def debug_compilation_constraints(self, duration_minutes: int, max_results: int = 10) -> Dict[str, Any]:
+        """
+        Debug method to analyze video availability and constraint violations
+        for a specific duration compilation.
+        
+        Args:
+            duration_minutes: Target compilation duration
+            max_results: Maximum number of results to return
+            
+        Returns:
+            Detailed debug information about constraint violations and video availability
+        """
+        duration_rounded = round(duration_minutes / 5) * 5
+        duration_key = f"{duration_rounded}min"
+        one_year_ago = datetime.utcnow() - timedelta(days=365)
+        current_date = datetime.utcnow()
+        
+        debug_info = {
+            'duration_analyzed': duration_key,
+            'analysis_date': current_date.isoformat(),
+            'constraint_date_range': f"Videos used after {one_year_ago.strftime('%Y-%m-%d')} are restricted",
+            'videos_analyzed': 0,
+            'eligible_videos': 0,
+            'restricted_videos': [],
+            'never_used_first_video': [],
+            'usage_stats': {
+                'total_videos': 0,
+                'videos_with_compilation_usage': 0,
+                'videos_never_used': 0,
+                'videos_restricted_by_365_day_rule': 0
+            }
+        }
+        
+        # Get all videos for analysis
+        all_videos = list(self.videos_collection.find({}))
+        debug_info['videos_analyzed'] = len(all_videos)
+        
+        for video in all_videos:
+            video_id = video.get('video_id')
+            video_title = video.get('title', 'Unknown')
+            usage_stats = video.get('compilation_usage_stats', {})
+            
+            first_video_by_duration = usage_stats.get('first_video_by_duration', {})
+            first_video_last_used_by_duration = usage_stats.get('first_video_last_used_by_duration', {})
+            
+            usage_count = first_video_by_duration.get(duration_key, 0)
+            last_used_date = first_video_last_used_by_duration.get(duration_key)
+            
+            # Check if video has any compilation usage
+            total_inclusions = usage_stats.get('total_inclusions', 0)
+            if total_inclusions == 0:
+                debug_info['usage_stats']['videos_never_used'] += 1
+                if usage_count == 0:
+                    debug_info['never_used_first_video'].append({
+                        'video_id': video_id,
+                        'title': video_title,
+                        'retention_30s': video.get('retention_30s', 0),
+                        'duration_seconds': video.get('duration_seconds', 0)
+                    })
+            else:
+                debug_info['usage_stats']['videos_with_compilation_usage'] += 1
+            
+            # Check 365-day restriction
+            was_used_recently = False
+            if last_used_date and isinstance(last_used_date, datetime):
+                if last_used_date > one_year_ago:
+                    was_used_recently = True
+                    eligible_date = last_used_date + timedelta(days=365)
+                    
+                    debug_info['videos_restricted_by_365_day_rule'] += 1
+                    debug_info['restricted_videos'].append({
+                        'video_id': video_id,
+                        'title': video_title,
+                        'last_used_as_first': last_used_date.isoformat(),
+                        'restricted_until': eligible_date.isoformat(),
+                        'usage_count_in_duration': usage_count,
+                        'remaining_restriction_days': max(0, (eligible_date - current_date).days)
+                    })
+            
+            # Count as eligible if not restricted
+            if not was_used_recently:
+                debug_info['eligible_videos'] += 1
+        
+        debug_info['usage_stats']['total_videos'] = len(all_videos)
+        
+        # Limit results to prevent overwhelming output
+        debug_info['restricted_videos'] = debug_info['restricted_videos'][:max_results]
+        debug_info['never_used_first_video'] = debug_info['never_used_first_video'][:max_results]
+        
+        return debug_info

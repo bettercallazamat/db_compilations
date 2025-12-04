@@ -112,6 +112,8 @@
     .timestamp-card.dragging {
       opacity: 0.5;
       transform: rotate(2deg);
+      box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+      z-index: 1000;
     }
 
     .timestamp-card.drag-over {
@@ -365,6 +367,27 @@
       z-index: 1000;
       min-width: 250px;
     }
+
+    #compilationTitle {
+      color: white !important;
+      font-weight: 600;
+      border: none;
+      background: transparent;
+      box-shadow: none;
+      border-bottom: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 0;
+      transition: all 0.3s ease;
+    }
+
+    #compilationTitle:focus {
+      outline: none;
+      border-bottom-color: rgba(255, 255, 255, 0.8);
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+    }
+
+    #compilationTitle::placeholder {
+      color: rgba(255, 255, 255, 0.6);
+    }
   </style>
 </head>
 
@@ -431,12 +454,17 @@
     <!-- Hero Section -->
     <div class="preview-hero">
       <div class="d-flex justify-content-between align-items-start">
-        <div>
-          <h1 class="display-6 mb-2">
-            <i class="fas fa-edit me-2"></i>Editing: {{ compilation.title }}
-          </h1>
+        <div class="flex-grow-1">
+          <div class="d-flex align-items-center mb-2">
+            <h1 class="display-6 mb-0">
+              <i class="fas fa-edit me-2"></i>Editing:
+            </h1>
+            <input type="text" id="compilationTitle" class="form-control form-control-lg bg-transparent border-0 text-white" 
+                   style="font-size: 1.5rem; font-weight: 600; box-shadow: none; border-bottom: 2px solid rgba(255,255,255,0.3);" 
+                   value="{{ compilation.title }}" maxlength="100" placeholder="Enter compilation title">
+          </div>
           <p class="lead mb-3">
-            <i class="fas fa-clock me-2"></i>{{ compilation.duration_rounded }} minutes
+            <i class="fas fa-clock me-2"></i><span id="compilationDuration">{{ compilation.duration_rounded }}</span> minutes
             <span class="ms-3"><i class="fas fa-video me-2"></i><span id="videoCount">{{ compilation.video_count }}</span> videos</span>
           </p>
           <span class="status-badge status-{{ compilation.status }}">
@@ -452,6 +480,9 @@
             {{ compilation.status|title }}
             {% endif %}
           </span>
+          <small class="text-white-50 d-block mt-2">
+            <i class="fas fa-info-circle me-1"></i>Title updated: <span id="titleUpdateStatus">Never</span>
+          </small>
         </div>
         <div class="text-end">
           <small class="opacity-75">Created {{ compilation.created_at.strftime('%B %d, %Y') }}</small>
@@ -500,9 +531,9 @@
           </div>
 
           {% if compilation.timestamps %}
-          <div id="timelineContainer" class="timeline-container">
+          <div id="timelineContainer" class="timeline-container" style="min-height: 50px;">
             {% for timestamp in compilation.timestamps %}
-            <div class="timestamp-card" data-video-id="{{ timestamp.video_id }}" data-index="{{ loop.index0 }}">
+            <div class="timestamp-card" data-video-id="{{ timestamp.video_id }}" data-index="{{ loop.index0 }}" draggable="true">
               <div class="d-flex justify-content-between align-items-start">
                 <div class="flex-grow-1">
                   <div class="d-flex align-items-center mb-2">
@@ -649,12 +680,42 @@
         <div class="modal-body">
           <!-- Search Filter -->
           <div class="mb-3">
-            <input type="text" class="form-control" id="videoSearch" placeholder="Search videos..." onkeyup="filterAvailableVideos()">
+            <div class="position-relative">
+              <input type="text" class="form-control" id="videoSearch" placeholder="Search videos by title, description, or video ID..." onkeyup="filterAvailableVideos()">
+              <div id="searchLoading" class="position-absolute top-50 end-0 translate-middle-y me-3" style="display: none;">
+                <div class="spinner-border spinner-border-sm text-primary" role="status">
+                  <span class="visually-hidden">Searching...</span>
+                </div>
+              </div>
+            </div>
+            <small class="text-muted">
+              <i class="fas fa-info-circle me-1"></i>
+              <strong>Search Tips:</strong> Search by video title or video ID. Use partial words or multiple keywords. Search is case-insensitive.
+            </small>
+            <div id="searchResultsInfo" class="mt-1" style="display: none;">
+              <small class="text-info">
+                <i class="fas fa-search me-1"></i>
+                <span id="searchResultsText"></span>
+              </small>
+            </div>
           </div>
 
           <!-- Available Videos List -->
           <div id="availableVideosList" class="available-videos-modal">
             <!-- Videos will be loaded here -->
+          </div>
+          
+          <!-- Pagination -->
+          <div id="videoPagination" class="d-flex justify-content-between align-items-center mt-3" style="display: none;">
+            <small class="text-muted" id="videoCountInfo"></small>
+            <div>
+              <button type="button" class="btn btn-outline-primary btn-sm me-2" id="prevPage" onclick="changePage(-1)">
+                <i class="fas fa-chevron-left me-1"></i>Previous
+              </button>
+              <button type="button" class="btn btn-outline-primary btn-sm" id="nextPage" onclick="changePage(1)">
+                Next<i class="fas fa-chevron-right ms-1"></i>
+              </button>
+            </div>
           </div>
         </div>
         <div class="modal-footer">
@@ -697,10 +758,17 @@
     // Update current time
     document.getElementById('current-time').textContent = new Date().toISOString().slice(0, 16).replace('T', ' ');
 
-    let originalCompilation = {{ compilation | tojson }};
+    let originalCompilation = {{ compilation | tojson | safe }};
     let currentCompilation = JSON.parse(JSON.stringify(originalCompilation));
     let availableVideos = [];
     let selectedVideoIds = new Set();
+    let draggedElement = null;
+    let originalTitle = currentCompilation.title || '';
+    let titleChangeTimeout = null;
+    let originalFirstVideoId = currentCompilation.timestamps && currentCompilation.timestamps.length > 0 ? currentCompilation.timestamps[0].video_id : null;
+    let currentPage = 1;
+    let totalVideos = 0;
+    let currentSearchTerm = '';
 
     function showFlashMessage(message, category = 'info') {
       const flashContainer = document.getElementById('flash-messages');
@@ -743,31 +811,296 @@
       document.getElementById('loadingOverlay').style.display = 'none';
     }
 
+    // Title Management
+    function initializeTitleEditing() {
+      const titleInput = document.getElementById('compilationTitle');
+      titleInput.addEventListener('input', handleTitleChange);
+      titleInput.addEventListener('blur', updateTitleTimestamp);
+    }
+
+    function handleTitleChange(e) {
+      const newTitle = e.target.value.trim();
+      currentCompilation.title = newTitle;
+      
+      // Update the timestamp for when title was last changed
+      document.getElementById('titleUpdateStatus').textContent = 'Modified';
+      
+      // Clear any existing timeout
+      if (titleChangeTimeout) {
+        clearTimeout(titleChangeTimeout);
+      }
+      
+      // Set a new timeout to auto-save title after 2 seconds of inactivity
+      titleChangeTimeout = setTimeout(() => {
+        saveTitleChange();
+      }, 2000);
+      
+      showSaveStatus('Title modified', 'info');
+    }
+
+    function updateTitleTimestamp() {
+      document.getElementById('titleUpdateStatus').textContent = new Date().toLocaleString();
+    }
+
+    function saveTitleChange() {
+      if (currentCompilation.title !== originalTitle) {
+        // Update compilation with new title
+        fetch('/api/compilation/{{ compilation._id }}/update', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            title: currentCompilation.title,
+            timestamps: currentCompilation.timestamps
+          })
+        })
+          .then(response => response.json())
+          .then(data => {
+            if (data.success) {
+              originalTitle = currentCompilation.title;
+              updateTitleTimestamp();
+              showSaveStatus('Title saved successfully!', 'success');
+            } else {
+              showFlashMessage('Failed to save title: ' + data.error, 'error');
+            }
+          })
+          .catch(error => {
+            showFlashMessage('Error saving title: ' + error.message, 'error');
+          });
+      }
+    }
+
+    // Video Stats Management
+    function updateVideoStats(videoId, changeType, oldPosition = null, newPosition = null) {
+      // This function will be called to update video usage statistics
+      // when videos are moved or deleted from compilation
+      console.log(`Video ${videoId} ${changeType}`, { oldPosition, newPosition });
+      
+      // Track position changes for analytics
+      if (changeType === 'moved' && oldPosition !== null && newPosition !== null) {
+        // First video position change affects compilation metadata
+        if (oldPosition === 0 || newPosition === 0) {
+          checkFirstVideoChange();
+        }
+      }
+    }
+
+    function checkFirstVideoChange() {
+      const newFirstVideoId = currentCompilation.timestamps && currentCompilation.timestamps.length > 0 
+        ? currentCompilation.timestamps[0].video_id 
+        : null;
+      
+      if (originalFirstVideoId && newFirstVideoId && originalFirstVideoId !== newFirstVideoId) {
+        // First video has changed, suggest title update
+        const firstVideoTitle = currentCompilation.timestamps[0].title;
+        if (firstVideoTitle && !currentCompilation.title.includes(firstVideoTitle)) {
+          showSaveStatus('First video changed. Consider updating the compilation title.', 'info');
+        }
+        originalFirstVideoId = newFirstVideoId;
+      }
+    }
+
+    // Drag and Drop Functions
+    function initializeDragAndDrop() {
+      const container = document.getElementById('timelineContainer');
+      
+      // Add drag and drop event listeners to the container
+      container.addEventListener('dragstart', handleDragStart);
+      container.addEventListener('dragover', handleDragOver);
+      container.addEventListener('drop', handleDrop);
+      container.addEventListener('dragend', handleDragEnd);
+    }
+
+    function handleDragStart(e) {
+      draggedElement = e.target.closest('.timestamp-card');
+      if (draggedElement) {
+        draggedElement.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/html', draggedElement.outerHTML);
+        e.dataTransfer.setData('text/plain', draggedElement.getAttribute('data-video-id'));
+        console.log('Drag started for video:', draggedElement.getAttribute('data-video-id'));
+      }
+    }
+
+    function handleDragOver(e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      
+      const target = e.target.closest('.timestamp-card');
+      if (target && target !== draggedElement) {
+        // Remove previous drag-over class
+        document.querySelectorAll('.timestamp-card.drag-over').forEach(el => {
+          el.classList.remove('drag-over');
+        });
+        target.classList.add('drag-over');
+      } else {
+        // Remove drag-over class if not hovering over a valid target
+        document.querySelectorAll('.timestamp-card.drag-over').forEach(el => {
+          el.classList.remove('drag-over');
+        });
+      }
+    }
+
+    function handleDrop(e) {
+      e.preventDefault();
+      
+      const target = e.target.closest('.timestamp-card');
+      
+      if (target && draggedElement) {
+        // Get the video IDs
+        const draggedVideoId = draggedElement.getAttribute('data-video-id');
+        const targetVideoId = target.getAttribute('data-video-id');
+        
+        console.log('Drop target:', targetVideoId, 'dragged:', draggedVideoId);
+        
+        if (draggedVideoId !== targetVideoId) {
+          // Find the indices in the current compilation
+          const draggedIndex = currentCompilation.timestamps.findIndex(v => v.video_id === draggedVideoId);
+          const targetIndex = currentCompilation.timestamps.findIndex(v => v.video_id === targetVideoId);
+          
+          console.log('Indices - dragged:', draggedIndex, 'target:', targetIndex);
+          
+          if (draggedIndex !== -1 && targetIndex !== -1) {
+            // Update video stats for position change
+            updateVideoStats(draggedVideoId, 'moved', draggedIndex, targetIndex);
+            
+            // Remove the dragged item and insert it at the target position
+            const draggedVideo = currentCompilation.timestamps.splice(draggedIndex, 1)[0];
+            
+            // Adjust target index if necessary (when dragging downward)
+            let insertIndex = targetIndex;
+            if (draggedIndex < targetIndex) {
+              insertIndex = targetIndex; // When dragging down, target index shifts down by 1
+            }
+            
+            console.log('Inserting at index:', insertIndex);
+            
+            currentCompilation.timestamps.splice(insertIndex, 0, draggedVideo);
+            
+            // Recalculate timestamps for all videos in the new order
+            recalculateTimestamps();
+            
+            // Update duration and check for first video change
+            updateDuration();
+            checkFirstVideoChange();
+            
+            // Update the display and stats
+            updateTimelineDisplay();
+            updateStats();
+            showSaveStatus('Video position updated via drag & drop', 'info');
+          } else {
+            console.log('Could not find video indices');
+          }
+        }
+      } else {
+        console.log('No target or dragged element found');
+      }
+      
+      // Clean up visual feedback
+      document.querySelectorAll('.timestamp-card.drag-over').forEach(el => {
+        el.classList.remove('drag-over');
+      });
+    }
+
+    function handleDragEnd(e) {
+      if (draggedElement) {
+        draggedElement.classList.remove('dragging');
+        draggedElement = null;
+      }
+      
+      // Clean up visual feedback
+      document.querySelectorAll('.timestamp-card.drag-over').forEach(el => {
+        el.classList.remove('drag-over');
+      });
+    }
+
     function moveVideoUp(videoId) {
       const videoIndex = currentCompilation.timestamps.findIndex(v => v.video_id === videoId);
       if (videoIndex > 0) {
+        // Update video stats for position change
+        updateVideoStats(videoId, 'moved', videoIndex, videoIndex - 1);
+        
         // Swap with previous video
         [currentCompilation.timestamps[videoIndex], currentCompilation.timestamps[videoIndex - 1]] =
           [currentCompilation.timestamps[videoIndex - 1], currentCompilation.timestamps[videoIndex]];
+        
+        // Recalculate timestamps after reordering
+        recalculateTimestamps();
+        
+        // Update duration and check for first video change
+        updateDuration();
+        checkFirstVideoChange();
+        
         updateTimelineDisplay();
         updateStats();
+        showSaveStatus('Video moved up', 'info');
       }
     }
 
     function moveVideoDown(videoId) {
       const videoIndex = currentCompilation.timestamps.findIndex(v => v.video_id === videoId);
       if (videoIndex < currentCompilation.timestamps.length - 1) {
+        // Update video stats for position change
+        updateVideoStats(videoId, 'moved', videoIndex, videoIndex + 1);
+        
         // Swap with next video
         [currentCompilation.timestamps[videoIndex], currentCompilation.timestamps[videoIndex + 1]] =
           [currentCompilation.timestamps[videoIndex + 1], currentCompilation.timestamps[videoIndex]];
+        
+        // Recalculate timestamps after reordering
+        recalculateTimestamps();
+        
+        // Update duration and check for first video change
+        updateDuration();
+        checkFirstVideoChange();
+        
         updateTimelineDisplay();
         updateStats();
+        showSaveStatus('Video moved down', 'info');
       }
+    }
+
+    function recalculateTimestamps() {
+      // Recalculate all timestamps based on the new order
+      let currentTimeSeconds = 0;
+      
+      currentCompilation.timestamps.forEach((timestamp, index) => {
+        // Format timestamp as MM:SS or H:MM:SS
+        const minutes = Math.floor(currentTimeSeconds / 60);
+        const seconds = currentTimeSeconds % 60;
+        
+        let formattedTimestamp;
+        if (minutes >= 60) {
+          const hours = Math.floor(minutes / 60);
+          const remainingMinutes = minutes % 60;
+          formattedTimestamp = `${hours}:${remainingMinutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        } else {
+          formattedTimestamp = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+        }
+        
+        // Update the timestamp in the compilation data
+        timestamp.timestamp = formattedTimestamp;
+        
+        // Move to next video position (add video duration + 2 seconds for transition)
+        currentTimeSeconds += timestamp.original_duration + 2;
+      });
     }
 
     function deleteVideo(videoId) {
       if (confirm('Are you sure you want to remove this video from the compilation?')) {
+        // Update video stats for deletion
+        updateVideoStats(videoId, 'deleted');
+        
         currentCompilation.timestamps = currentCompilation.timestamps.filter(v => v.video_id !== videoId);
+        
+        // Recalculate timestamps after deletion
+        recalculateTimestamps();
+        
+        // Update duration and check for first video change
+        updateDuration();
+        checkFirstVideoChange();
+        
         updateTimelineDisplay();
         updateStats();
         showSaveStatus('Video removed from compilation', 'warning');
@@ -783,6 +1116,7 @@
         videoElement.className = 'timestamp-card';
         videoElement.setAttribute('data-video-id', timestamp.video_id);
         videoElement.setAttribute('data-index', index);
+        videoElement.setAttribute('draggable', 'true');
 
         // Determine quality badge class
         let qualityClass = 'quality-low';
@@ -834,13 +1168,8 @@
       });
     }
 
-    function updateStats() {
-      const videoCount = currentCompilation.timestamps.length;
-      document.getElementById('videoCount').textContent = videoCount;
-      document.getElementById('currentVideoCount').textContent = videoCount;
-      document.getElementById('statsVideoCount').textContent = videoCount;
-
-      // Update duration (recalculate based on timestamps)
+    function updateDuration() {
+      // Recalculate compilation duration
       let totalDuration = 0;
       currentCompilation.timestamps.forEach((timestamp, index) => {
         totalDuration += timestamp.original_duration;
@@ -850,18 +1179,40 @@
       });
 
       const durationMinutes = Math.round(totalDuration / 60);
+      currentCompilation.duration_rounded = durationMinutes;
+      
+      // Update display
+      document.getElementById('compilationDuration').textContent = durationMinutes;
       document.getElementById('statsDuration').textContent = durationMinutes;
+      
+      return durationMinutes;
+    }
+
+    function updateStats() {
+      const videoCount = currentCompilation.timestamps.length;
+      document.getElementById('videoCount').textContent = videoCount;
+      document.getElementById('currentVideoCount').textContent = videoCount;
+      document.getElementById('statsVideoCount').textContent = videoCount;
+
+      // Update duration using the new function
+      updateDuration();
     }
 
     function openAddVideoModal() {
       showLoading('Loading available videos...');
+      
+      // Clear any existing search and reset pagination
+      document.getElementById('videoSearch').value = '';
+      currentPage = 1;
+      currentSearchTerm = '';
 
-      fetch('/api/available-videos/{{ compilation._id }}')
+      fetch('/api/available-videos/{{ compilation._id }}?page=1')
         .then(response => response.json())
         .then(data => {
           hideLoading();
           if (data.success) {
             availableVideos = data.videos;
+            totalVideos = data.total_count || 0;
             displayAvailableVideos();
             const modal = new bootstrap.Modal(document.getElementById('addVideoModal'));
             modal.show();
@@ -879,7 +1230,31 @@
       const container = document.getElementById('availableVideosList');
       const videos = videosToShow || availableVideos;
 
+      // Debug logging
+      console.log(`Displaying ${videos.length} videos`);
+      console.log('Current search term:', currentSearchTerm);
+      console.log('Total videos available:', totalVideos);
+
       container.innerHTML = '';
+      
+      // Add a header with information about what's being shown
+      const headerElement = document.createElement('div');
+      headerElement.className = 'mb-3 p-2 bg-light rounded';
+      
+      let headerText = `Showing ${videos.length} videos`;
+      if (currentSearchTerm) {
+        headerText += ` for "${currentSearchTerm}"`;
+      }
+      headerText += ` out of ${totalVideos} total available videos`;
+      
+      headerElement.innerHTML = `
+        <small class="text-muted">
+          <i class="fas fa-info-circle me-1"></i>${headerText}
+        </small>
+      `;
+      
+      container.appendChild(headerElement);
+      
       videos.forEach(video => {
         const videoElement = document.createElement('div');
         videoElement.className = 'available-video-item';
@@ -899,6 +1274,7 @@
                 <i class="fas fa-clock me-1"></i>${Math.floor(video.duration_seconds / 60)}:${String(video.duration_seconds % 60).padStart(2, '0')}
                 <i class="fas fa-chart-line ms-3 me-1"></i>${video.retention_30s || 0}% retention
                 <i class="fas fa-eye ms-3 me-1"></i>${(video.view_count || 0).toLocaleString()} views
+                <span class="ms-3 text-info"><i class="fas fa-video me-1"></i>${video.video_id}</span>
               </small>
             </div>
             ${selectedVideoIds.has(video.video_id) ? '<i class="fas fa-check-circle text-success"></i>' : ''}
@@ -908,6 +1284,76 @@
         videoElement.onclick = () => toggleVideoSelection(video.video_id);
         container.appendChild(videoElement);
       });
+      
+      // Update pagination info
+      updatePaginationInfo();
+    }
+    
+    function updatePaginationInfo() {
+      const paginationDiv = document.getElementById('videoPagination');
+      const countInfo = document.getElementById('videoCountInfo');
+      const prevBtn = document.getElementById('prevPage');
+      const nextBtn = document.getElementById('nextPage');
+      
+      if (totalVideos > 100) { // Only show pagination if we have many videos
+        paginationDiv.style.display = 'flex';
+        
+        const startItem = (currentPage - 1) * 100 + 1;
+        const endItem = Math.min(currentPage * 100, totalVideos);
+        countInfo.textContent = `Showing ${startItem}-${endItem} of ${totalVideos} videos`;
+        
+        // Update button states
+        prevBtn.disabled = currentPage === 1;
+        nextBtn.disabled = !document.getElementById('availableVideosList').children.length || (currentPage * 100 >= totalVideos);
+      } else {
+        paginationDiv.style.display = 'none';
+      }
+    }
+    
+    function changePage(direction) {
+      const newPage = currentPage + direction;
+      
+      // Don't go below page 1
+      if (newPage < 1) return;
+      
+      currentPage = newPage;
+      
+      // Reload videos for the new page using current search term
+      if (currentSearchTerm) {
+        searchVideosOnServer(currentSearchTerm);
+      } else {
+        loadAvailableVideosPage();
+      }
+    }
+    
+    function loadAvailableVideosPage() {
+      showLoading('Loading videos...');
+      
+      let url = `/api/available-videos/{{ compilation._id }}?page=${currentPage}&per_page=100`;
+      const searchTerm = document.getElementById('videoSearch').value.trim();
+      if (searchTerm) {
+        url += `&search=${encodeURIComponent(searchTerm)}`;
+      }
+      
+      console.log('Loading videos from:', url);
+      
+      fetch(url)
+        .then(response => response.json())
+        .then(data => {
+          hideLoading();
+          if (data.success) {
+            availableVideos = data.videos || [];
+            totalVideos = data.total_count || 0;
+            console.log(`Loaded ${availableVideos.length} videos (${totalVideos} total)`);
+            displayAvailableVideos();
+          } else {
+            showFlashMessage('Failed to load videos: ' + data.error, 'error');
+          }
+        })
+        .catch(error => {
+          hideLoading();
+          showFlashMessage('Error loading videos: ' + error.message, 'error');
+        });
     }
 
     function toggleVideoSelection(videoId) {
@@ -919,13 +1365,94 @@
       displayAvailableVideos();
     }
 
+    let searchTimeout = null;
+    
     function filterAvailableVideos() {
-      const searchTerm = document.getElementById('videoSearch').value.toLowerCase();
-      const filtered = availableVideos.filter(video =>
-        video.title.toLowerCase().includes(searchTerm) ||
-        (video.description && video.description.toLowerCase().includes(searchTerm))
-      );
-      displayAvailableVideos(filtered);
+      const searchTerm = document.getElementById('videoSearch').value.trim();
+      
+      // Clear previous timeout
+      if (searchTimeout) {
+        clearTimeout(searchTimeout);
+      }
+      
+      // Reset page to 1 when searching
+      currentPage = 1;
+      
+      // If search term is empty, show all available videos
+      if (!searchTerm) {
+        currentSearchTerm = '';
+        showLoading('Loading all available videos...');
+        
+        fetch(`/api/available-videos/{{ compilation._id }}?page=1`)
+          .then(response => response.json())
+          .then(data => {
+            hideLoading();
+            if (data.success) {
+              availableVideos = data.videos;
+              totalVideos = data.total_count || 0;
+              displayAvailableVideos();
+              showSaveStatus(`Loaded all ${totalVideos} available videos`, 'info');
+            } else {
+              showFlashMessage('Failed to load videos: ' + data.error, 'error');
+            }
+          })
+          .catch(error => {
+            hideLoading();
+            showFlashMessage('Error loading videos: ' + error.message, 'error');
+          });
+        return;
+      }
+      
+      // Debounce search to avoid too many API calls
+      searchTimeout = setTimeout(() => {
+        searchVideosOnServer(searchTerm);
+      }, 500); // Increased to 500ms for better UX
+    }
+    
+    function searchVideosOnServer(searchTerm) {
+      // Show search loading indicator
+      document.getElementById('searchLoading').style.display = 'block';
+      
+      currentSearchTerm = searchTerm;
+      
+      fetch(`/api/available-videos/{{ compilation._id }}?search=${encodeURIComponent(searchTerm)}&page=${currentPage}`)
+        .then(response => response.json())
+        .then(data => {
+          // Hide search loading indicator
+          document.getElementById('searchLoading').style.display = 'none';
+          
+          if (data.success) {
+            availableVideos = data.videos;
+            totalVideos = data.total_count || 0;
+            displayAvailableVideos();
+            
+            // Show search results info
+            const searchInfoDiv = document.getElementById('searchResultsInfo');
+            const searchTextSpan = document.getElementById('searchResultsText');
+            
+            if (data.videos.length === 0) {
+              searchTextSpan.textContent = `No videos found matching "${searchTerm}". Try different keywords.`;
+              searchInfoDiv.style.display = 'block';
+              searchInfoDiv.className = 'mt-1';
+              searchInfoDiv.querySelector('small').className = 'text-warning';
+            } else {
+              const resultText = data.has_more ? 
+                `Found ${data.videos.length} videos (showing page ${data.page})` :
+                `Found ${data.videos.length} videos`;
+              searchTextSpan.textContent = resultText + ` matching "${searchTerm}"`;
+              searchInfoDiv.style.display = 'block';
+              searchInfoDiv.className = 'mt-1';
+              searchInfoDiv.querySelector('small').className = 'text-info';
+            }
+          } else {
+            showFlashMessage('Search failed: ' + data.error, 'error');
+          }
+        })
+        .catch(error => {
+          // Hide search loading indicator
+          document.getElementById('searchLoading').style.display = 'none';
+          showFlashMessage('Error searching videos: ' + error.message, 'error');
+        });
     }
 
     function addSelectedVideos() {
@@ -937,35 +1464,8 @@
       const videosToAdd = availableVideos.filter(video => selectedVideoIds.has(video.video_id));
 
       videosToAdd.forEach(video => {
-        // Calculate new timestamp
-        let currentTime = 0;
-        if (currentCompilation.timestamps.length > 0) {
-          const lastTimestamp = currentCompilation.timestamps[currentCompilation.timestamps.length - 1];
-          // Parse the last timestamp
-          const timeParts = lastTimestamp.timestamp.split(':');
-          if (timeParts.length === 2) {
-            currentTime = parseInt(timeParts[0]) * 60 + parseInt(timeParts[1]);
-          } else if (timeParts.length === 3) {
-            currentTime = parseInt(timeParts[0]) * 3600 + parseInt(timeParts[1]) * 60 + parseInt(timeParts[2]);
-          }
-          currentTime += lastTimestamp.original_duration + 2; // Add duration and transition time
-        }
-
-        // Format new timestamp
-        let newTimestamp;
-        if (currentTime >= 3600) {
-          const hours = Math.floor(currentTime / 3600);
-          const minutes = Math.floor((currentTime % 3600) / 60);
-          const seconds = currentTime % 60;
-          newTimestamp = `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-        } else {
-          const minutes = Math.floor(currentTime / 60);
-          const seconds = currentTime % 60;
-          newTimestamp = `${minutes}:${String(seconds).padStart(2, '0')}`;
-        }
-
         currentCompilation.timestamps.push({
-          timestamp: newTimestamp,
+          timestamp: '', // Will be calculated by recalculateTimestamps
           title: video.title,
           video_id: video.video_id,
           original_duration: video.duration_seconds,
@@ -973,6 +1473,12 @@
           retention_rate: video.retention_30s || 0
         });
       });
+
+      // Recalculate all timestamps after adding new videos
+      recalculateTimestamps();
+
+      // Update duration when adding new videos
+      updateDuration();
 
       updateTimelineDisplay();
       updateStats();
@@ -989,13 +1495,18 @@
     function saveCompilation() {
       showLoading('Saving compilation...');
 
+      // Save title change first if needed
+      saveTitleChange();
+
       fetch('/api/compilation/{{ compilation._id }}/update', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          timestamps: currentCompilation.timestamps
+          title: currentCompilation.title,
+          timestamps: currentCompilation.timestamps,
+          duration_rounded: currentCompilation.duration_rounded
         })
       })
         .then(response => response.json())
@@ -1003,6 +1514,8 @@
           hideLoading();
           if (data.success) {
             originalCompilation = JSON.parse(JSON.stringify(currentCompilation));
+            originalTitle = currentCompilation.title;
+            updateTitleTimestamp();
             showSaveStatus('Compilation saved successfully!', 'success');
           } else {
             showFlashMessage('Failed to save compilation: ' + data.error, 'error');
@@ -1017,6 +1530,10 @@
     function resetCompilation() {
       if (confirm('Are you sure you want to reset to the original compilation? All changes will be lost.')) {
         currentCompilation = JSON.parse(JSON.stringify(originalCompilation));
+        
+        // Recalculate timestamps after reset
+        recalculateTimestamps();
+        
         updateTimelineDisplay();
         updateStats();
         showSaveStatus('Compilation reset to original state', 'info');
@@ -1049,6 +1566,24 @@
           });
       }
     }
+
+    // Initialize drag and drop when page loads
+    document.addEventListener('DOMContentLoaded', function() {
+      initializeDragAndDrop();
+      initializeTitleEditing();
+      updateTitleTimestamp();
+    });
+
+    // Reinitialize drag and drop after timeline updates
+    // This will be called from updateTimelineDisplay
+    const originalUpdateTimelineDisplay = updateTimelineDisplay;
+    updateTimelineDisplay = function() {
+      originalUpdateTimelineDisplay();
+      // Small delay to ensure DOM is updated
+      setTimeout(() => {
+        initializeDragAndDrop();
+      }, 100);
+    };
   </script>
 </body>
 

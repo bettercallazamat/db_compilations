@@ -220,9 +220,72 @@
       color: #667eea;
     }
 
-      {% block extra_css %}
-      {% endblock %}
+    /* Tags functionality styles */
+    .tag-badge {
+      font-size: 0.8em;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.25rem 0.5rem;
+    }
+
+    .tag-badge .btn-close {
+      padding: 0.125rem;
+      margin: 0;
+    }
+
+    .tag-input-container {
+      position: relative;
+    }
+
+    .tag-input-wrapper {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .tag-input {
+      width: 100%;
+      font-size: 0.875rem;
+    }
+
+    .tag-suggestions {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      z-index: 1000;
+      max-height: 200px;
+      overflow-y: auto;
+      border: 1px solid #dee2e6;
+      border-radius: 0.375rem;
+      background-color: white;
+      box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+    }
+
+    .tag-suggestion-item {
+      padding: 0.5rem 0.75rem;
+      cursor: pointer;
+      border-bottom: 1px solid #f8f9fa;
+    }
+
+    .tag-suggestion-item:hover,
+    .tag-suggestion-item.highlighted {
+      background-color: #f8f9fa;
+    }
+
+    .tag-suggestion-item:last-child {
+      border-bottom: none;
+    }
+
+    .tags-display {
+      max-width: 200px;
+      overflow-wrap: break-word;
+    }
   </style>
+  
+  {% block extra_css %}
+  {% endblock %}
 </head>
 
 <body>
@@ -254,6 +317,11 @@
             <a class="nav-link {% if request.endpoint == 'user_compilations' %}active{% endif %}"
               href="/user-compilations">
               <i class="fas fa-user-edit me-1"></i>My Compilations
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link {% if request.endpoint == 'settings' %}active{% endif %}" href="/settings">
+              <i class="fas fa-cog me-1"></i>Settings
             </a>
           </li>
         </ul>

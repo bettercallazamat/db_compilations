@@ -210,6 +210,7 @@ class VideoUsageTracker:
                 'first_video_count': 0,
                 'usage_by_duration': {},
                 'first_video_by_duration': {},
+                'first_video_last_used_by_duration': {},
                 'auto_compilation_usage': 0,
                 'user_compilation_usage': 0
             }
@@ -234,6 +235,7 @@ class VideoUsageTracker:
             'first_video_count': 0,
             'usage_by_duration': {},
             'first_video_by_duration': {},
+            'first_video_last_used_by_duration': {},
             'auto_compilation_usage': 0,
             'user_compilation_usage': 0,
             # Separate tracking for each type
@@ -241,13 +243,15 @@ class VideoUsageTracker:
                 'total_inclusions': 0,
                 'first_video_count': 0,
                 'usage_by_duration': {},
-                'first_video_by_duration': {}
+                'first_video_by_duration': {},
+                'first_video_last_used_by_duration': {}
             },
             'user_compilation_details': {
                 'total_inclusions': 0,
                 'first_video_count': 0,
                 'usage_by_duration': {},
-                'first_video_by_duration': {}
+                'first_video_by_duration': {},
+                'first_video_last_used_by_duration': {}
             }
         }
 
@@ -281,6 +285,12 @@ class VideoUsageTracker:
             stats['user_compilation_details']['first_video_by_duration']
         )
 
+        # Merge last used dates (keep the most recent date)
+        stats['first_video_last_used_by_duration'] = self._merge_last_used_dates(
+            stats['auto_compilation_details']['first_video_last_used_by_duration'],
+            stats['user_compilation_details']['first_video_last_used_by_duration']
+        )
+
         return stats
 
     def _process_compilation_for_stats(self, compilation: dict, video_id: str, stats_section: dict):
@@ -293,8 +303,11 @@ class VideoUsageTracker:
             stats_section['usage_by_duration'][duration_key] = 0
         if duration_key not in stats_section['first_video_by_duration']:
             stats_section['first_video_by_duration'][duration_key] = 0
+        if duration_key not in stats_section['first_video_last_used_by_duration']:
+            stats_section['first_video_last_used_by_duration'][duration_key] = None
 
         timestamps = compilation.get('timestamps', [])
+        compilation_created_at = compilation.get('created_at')
 
         # Check each timestamp entry in the compilation
         for i, timestamp_entry in enumerate(timestamps):
@@ -307,6 +320,12 @@ class VideoUsageTracker:
                 if i == 0:
                     stats_section['first_video_count'] += 1
                     stats_section['first_video_by_duration'][duration_key] += 1
+                    
+                    # Track when this video was last used as first video for this duration
+                    if compilation_created_at:
+                        existing_date = stats_section['first_video_last_used_by_duration'][duration_key]
+                        if not existing_date or compilation_created_at > existing_date:
+                            stats_section['first_video_last_used_by_duration'][duration_key] = compilation_created_at
 
                 # Break after first match to avoid double counting
                 break
@@ -316,6 +335,14 @@ class VideoUsageTracker:
         merged = dict1.copy()
         for key, value in dict2.items():
             merged[key] = merged.get(key, 0) + value
+        return merged
+
+    def _merge_last_used_dates(self, dict1: dict, dict2: dict) -> dict:
+        """Merge two last-used-date dictionaries by keeping the most recent date"""
+        merged = dict1.copy()
+        for key, value in dict2.items():
+            if key not in merged or (value and (not merged[key] or value > merged[key])):
+                merged[key] = value
         return merged
 
     def get_video_usage_report(self, video_id: str = None) -> dict:

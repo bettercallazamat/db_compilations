@@ -42,7 +42,7 @@
 <!-- Filters Section -->
 <div class="filter-section">
   <form method="GET" class="row g-3">
-    <div class="col-md-4">
+    <div class="col-md-5">
       <label for="search" class="form-label">
         <i class="fas fa-search me-1"></i>Search Videos
       </label>
@@ -50,14 +50,14 @@
         placeholder="Search by title or description...">
     </div>
 
-    <div class="col-md-2">
+    <div class="col-md-3">
       <label for="actor" class="form-label">
         <i class="fas fa-user me-1"></i>Actor Filter
       </label>
       <select class="form-select" id="actor" name="actor">
         <option value="">All Videos</option>
-        <option value="true" {% if actor_filter=='true' %}selected{% endif %}>Actor Videos Only</option>
-        <option value="false" {% if actor_filter=='false' %}selected{% endif %}>Non-Actor Videos</option>
+        <option value="true" {% if actor_filter == 'true' %}selected{% endif %}>With Actor</option>
+        <option value="false" {% if actor_filter == 'false' %}selected{% endif %}>No Actor</option>
       </select>
     </div>
 
@@ -80,11 +80,23 @@
         <option value="">All Retention</option>
         <option value="high" {% if retention_filter=='high' %}selected{% endif %}>High (70%+)</option>
         <option value="medium" {% if retention_filter=='medium' %}selected{% endif %}>Medium (50-70%)</option>
-        <option value="low" {% if retention_filter=='low' %}selected{% endif %}>Low (&lt;50%)</option>
+        <option value="low" {% if retention_filter=='low' %}selected{% endif %}>Low (<50%)</option>
       </select>
     </div>
 
-    <div class="col-md-2 d-flex align-items-end gap-2">
+    <div class="col-md-2">
+      <label for="tag" class="form-label">
+        <i class="fas fa-tags me-1"></i>Tag Filter
+      </label>
+      <select class="form-select" id="tag" name="tag">
+        <option value="">All Tags</option>
+        {% for tag in available_tags %}
+        <option value="{{ tag }}" {% if tag_filter==tag %}selected{% endif %}>{{ tag }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="col-md-2 d-flex align-items-end justify-content-center gap-2">
       <button type="submit" class="btn btn-primary">
         <i class="fas fa-filter me-1"></i>Apply Filters
       </button>
@@ -124,6 +136,8 @@
           <th style="width: 100px;">Views</th>
           <th style="width: 80px;">Likes</th>
           <th style="width: 120px;">Retention</th>
+          <th style="width: 120px;">Tags</th>
+          <th style="width: 80px;">Actor</th>
           <th style="width: 100px;">Type</th>
           <th style="width: 120px;">Published</th>
           <th style="width: 80px;">Actions</th>
@@ -190,7 +204,7 @@
           <td>
             {% set retention = video.retention_30s|default(0) %}
             <div class="retention-bar mb-1">
-              <div class="retention-fill
+              <div class="retention-fill 
                                 {% if retention >= 70 %}retention-high
                                 {% elif retention >= 50 %}retention-medium
                                 {% else %}retention-low{% endif %}" style="width: {{ retention }}%">
@@ -204,32 +218,68 @@
             </small>
           </td>
 
-          <!-- Type & Status -->
+          <!-- Tags -->
           <td>
-            <div class="d-flex flex-column gap-1">
-              {% if video.is_compilation %}
-              <span class="badge badge-compilation">
-                <i class="fas fa-layer-group me-1"></i>Compilation
-              </span>
-              {% endif %}
-
-              {% if video.actor %}
-              <span class="badge badge-actor">
-                <i class="fas fa-user me-1"></i>Actor
-              </span>
-              {% endif %}
-
-              {% if not video.is_compilation and not video.actor %}
-              <span class="badge bg-secondary">
-                <i class="fas fa-play me-1"></i>Regular
-              </span>
-              {% endif %}
+            <div class="tags-container" data-video-id="{{ video.video_id }}">
+              <!-- Existing tags -->
+              <div class="tags-display mb-2">
+                {% if video.tags %}
+                  {% for tag in video.tags %}
+                  <span class="badge bg-secondary me-1 mb-1 tag-badge" data-tag="{{ tag }}">
+                    {{ tag }}
+                    <button type="button" class="btn-close btn-close-white ms-1 remove-tag-btn" 
+                            data-video-id="{{ video.video_id }}" data-tag="{{ tag }}" 
+                            aria-label="Remove tag" style="font-size: 0.6em;"></button>
+                  </span>
+                  {% endfor %}
+                {% else %}
+                  <small class="text-muted">No tags</small>
+                {% endif %}
+              </div>
+              
+              <!-- Add tag button and input -->
+              <div class="tag-input-container">
+                <button type="button" class="btn btn-sm btn-outline-primary add-tag-btn" 
+                        data-video-id="{{ video.video_id }}" title="Add Tag">
+                  <i class="fas fa-plus"></i>
+                </button>
+                <div class="tag-input-wrapper" style="display: none;">
+                  <input type="text" class="form-control form-control-sm tag-input" 
+                         placeholder="Type tag name..." 
+                         data-video-id="{{ video.video_id }}">
+                  <div class="tag-suggestions dropdown-menu" style="display: none;"></div>
+                </div>
+              </div>
             </div>
+          </td>
+
+          <!-- Actor Status -->
+          <td>
+            <div class="form-check">
+              <input class="form-check-input actor-checkbox" type="checkbox" 
+                     data-video-id="{{ video.video_id }}" 
+                     {% if video.actor %}checked{% endif %}>
+              <label class="form-check-label">
+              </label>
+            </div>
+          </td>
+
+          <!-- Type -->
+          <td>
+            {% if video.is_compilation %}
+            <span class="badge badge-compilation">
+              <i class="fas fa-layer-group me-1"></i>Compilation
+            </span>
+            {% else %}
+            <span class="badge bg-secondary">
+              <i class="fas fa-play me-1"></i>Regular
+            </span>
+            {% endif %}
           </td>
 
           <!-- Published Date -->
           <td>
-            <small>{{ video.published_at|default('Unknown') }}</small>
+            <small>{{ video.published_at|format_date }}</small>
           </td>
 
           <!-- Actions -->
@@ -263,7 +313,7 @@
     {% if has_prev %}
     <li class="page-item">
       <a class="page-link"
-        href="?page={{ page - 1 }}{% if search_query %}&search={{ search_query }}{% endif %}{% if actor_filter %}&actor={{ actor_filter }}{% endif %}{% if compilation_filter %}&compilation={{ compilation_filter }}{% endif %}{% if retention_filter %}&retention={{ retention_filter }}{% endif %}">
+        href="?page={{ page - 1 }}{% if search_query %}&search={{ search_query }}{% endif %}{% if actor_filter %}&actor={{ actor_filter }}{% endif %}{% if compilation_filter %}&compilation={{ compilation_filter }}{% endif %}{% if retention_filter %}&retention={{ retention_filter }}{% endif %}{% if tag_filter %}&tag={{ tag_filter }}{% endif %}">
         <i class="fas fa-chevron-left me-1"></i>Previous
       </a>
     </li>
@@ -281,37 +331,37 @@
     <li class="page-item active">
       <span class="page-link">{{ page_num }}</span>
     </li>
-    {% elif page_num <= 3 or page_num> total_pages - 3 or (page_num >= page - 2 and page_num <= page + 2) %} <li
-        class="page-item">
-        <a class="page-link"
-          href="?page={{ page_num }}{% if search_query %}&search={{ search_query }}{% endif %}{% if actor_filter %}&actor={{ actor_filter }}{% endif %}{% if compilation_filter %}&compilation={{ compilation_filter }}{% endif %}{% if retention_filter %}&retention={{ retention_filter }}{% endif %}">{{
-          page_num }}</a>
-        </li>
-        {% elif page_num == 4 and page > 6 %}
-        <li class="page-item disabled">
-          <span class="page-link">...</span>
-        </li>
-        {% elif page_num == total_pages - 3 and page < total_pages - 5 %} <li class="page-item disabled">
-          <span class="page-link">...</span>
-          </li>
-          {% endif %}
-          {% endfor %}
+    {% elif page_num <= 3 or page_num > total_pages - 3 or (page_num >= page - 2 and page_num <= page + 2) %}
+    <li class="page-item">
+      <a class="page-link"
+        href="?page={{ page_num }}{% if search_query %}&search={{ search_query }}{% endif %}{% if actor_filter %}&actor={{ actor_filter }}{% endif %}{% if compilation_filter %}&compilation={{ compilation_filter }}{% endif %}{% if retention_filter %}&retention={{ retention_filter }}{% endif %}{% if tag_filter %}&tag={{ tag_filter }}{% endif %}">{{ page_num }}</a>
+    </li>
+    {% elif page_num == 4 and page > 6 %}
+    <li class="page-item disabled">
+      <span class="page-link">...</span>
+    </li>
+    {% elif page_num == total_pages - 3 and page < total_pages - 5 %}
+    <li class="page-item disabled">
+      <span class="page-link">...</span>
+    </li>
+    {% endif %}
+    {% endfor %}
 
-          <!-- Next Page -->
-          {% if has_next %}
-          <li class="page-item">
-            <a class="page-link"
-              href="?page={{ page + 1 }}{% if search_query %}&search={{ search_query }}{% endif %}{% if actor_filter %}&actor={{ actor_filter }}{% endif %}{% if compilation_filter %}&compilation={{ compilation_filter }}{% endif %}{% if retention_filter %}&retention={{ retention_filter }}{% endif %}">
-              Next<i class="fas fa-chevron-right ms-1"></i>
-            </a>
-          </li>
-          {% else %}
-          <li class="page-item disabled">
-            <span class="page-link">
-              Next<i class="fas fa-chevron-right ms-1"></i>
-            </span>
-          </li>
-          {% endif %}
+    <!-- Next Page -->
+    {% if has_next %}
+    <li class="page-item">
+      <a class="page-link"
+        href="?page={{ page + 1 }}{% if search_query %}&search={{ search_query }}{% endif %}{% if actor_filter %}&actor={{ actor_filter }}{% endif %}{% if compilation_filter %}&compilation={{ compilation_filter }}{% endif %}{% if retention_filter %}&retention={{ retention_filter }}{% endif %}{% if tag_filter %}&tag={{ tag_filter }}{% endif %}">
+        Next<i class="fas fa-chevron-right ms-1"></i>
+      </a>
+    </li>
+    {% else %}
+    <li class="page-item disabled">
+      <span class="page-link">
+        Next<i class="fas fa-chevron-right ms-1"></i>
+      </span>
+    </li>
+    {% endif %}
   </ul>
 </nav>
 {% endif %}
@@ -324,14 +374,14 @@
   </div>
   <h4 class="text-muted mb-3">No Videos Found</h4>
   <p class="text-muted mb-4">
-    {% if search_query or actor_filter or compilation_filter or retention_filter %}
+    {% if search_query or actor_filter or compilation_filter or retention_filter or tag_filter %}
     No videos match your current filters. Try adjusting your search criteria.
     {% else %}
     It looks like you haven't imported any videos yet.
     {% endif %}
   </p>
   <div class="d-flex justify-content-center gap-3">
-    {% if search_query or actor_filter or compilation_filter or retention_filter %}
+    {% if search_query or actor_filter or compilation_filter or retention_filter or tag_filter %}
     <a href="/" class="btn btn-primary">
       <i class="fas fa-times me-2"></i>Clear Filters
     </a>
@@ -348,7 +398,7 @@
 <script>
   // Auto-submit form on filter change (optional)
   document.addEventListener('DOMContentLoaded', function () {
-    const filterSelects = document.querySelectorAll('#actor, #compilation, #retention');
+    const filterSelects = document.querySelectorAll('#compilation, #retention, #tag, #actor');
 
     filterSelects.forEach(function (select) {
       select.addEventListener('change', function () {
@@ -367,6 +417,15 @@
         }
       }
     });
+
+    // Initialize tags functionality
+    initializeTagsFunctionality();
+    
+    // Apply consistent colors to tags
+    applyTagColors();
+    
+    // Initialize actor checkbox functionality
+    initializeActorCheckboxes();
   });
 
   // Search form enhancement
@@ -380,5 +439,413 @@
       }
     });
   }
+
+  // Generate consistent color for a tag based on its name
+  function getTagColor(tagName) {
+    // Extended array of pleasant colors for tags
+    const colors = [
+      '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7',
+      '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9',
+      '#F8C471', '#82E0AA', '#F1948A', '#85C1E9', '#D7DBDD',
+      '#FF7675', '#74B9FF', '#00B894', '#FDCB6E', '#6C5CE7',
+      '#A29BFE', '#FD79A8', '#E17055', '#00CEC9', '#81ECEC',
+      '#FFB6C1', '#20B2AA', '#9370DB', '#32CD32', '#FF6347',
+      '#FFD700', '#ADFF2F', '#FF69B4', '#1E90FF', '#FF4500'
+    ];
+    
+    // Generate a consistent hash for the tag name
+    let hash = 0;
+    for (let i = 0; i < tagName.length; i++) {
+      const char = tagName.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+    
+    // Use the hash to select a color from the array
+    const colorIndex = Math.abs(hash) % colors.length;
+    return colors[colorIndex];
+  }
+
+  // Apply consistent colors to all tag badges
+  function applyTagColors() {
+    const tagBadges = document.querySelectorAll('.tag-badge');
+    const colorCache = {}; // Cache to store colors for performance
+    
+    tagBadges.forEach(badge => {
+      const tagName = badge.getAttribute('data-tag');
+      
+      // Get or generate color for this tag
+      if (!colorCache[tagName]) {
+        colorCache[tagName] = getTagColor(tagName);
+      }
+      
+      const color = colorCache[tagName];
+      
+      // Apply the color to the badge
+      badge.style.backgroundColor = color;
+      badge.style.color = 'white';
+      badge.style.border = 'none';
+      
+      // Ensure the close button is visible on colored backgrounds
+      const closeBtn = badge.querySelector('.remove-tag-btn');
+      if (closeBtn) {
+        closeBtn.classList.remove('btn-close-white');
+        closeBtn.classList.add('btn-close');
+        closeBtn.style.filter = 'invert(1)';
+      }
+    });
+  }
+
+  // Initialize actor checkbox functionality
+  function initializeActorCheckboxes() {
+    document.addEventListener('change', function(e) {
+      if (e.target.classList.contains('actor-checkbox')) {
+        const videoId = e.target.getAttribute('data-video-id');
+        const isChecked = e.target.checked;
+        
+        toggleActorStatus(videoId, isChecked, e.target);
+      }
+    });
+  }
+
+  // Toggle actor status in database
+  function toggleActorStatus(videoId, isActor, checkbox) {
+    fetch(`/api/video/${videoId}/actor`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ actor: isActor })
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        console.log('Actor status updated successfully');
+        // Optionally show a brief success indication
+        checkbox.closest('td').style.backgroundColor = '#d4edda';
+        setTimeout(() => {
+          checkbox.closest('td').style.backgroundColor = '';
+        }, 1000);
+      } else {
+        // Revert checkbox if update failed
+        checkbox.checked = !isActor;
+        alert('Failed to update actor status: ' + (data.error || 'Unknown error'));
+      }
+    })
+    .catch(error => {
+      console.error('Error updating actor status:', error);
+      // Revert checkbox if update failed
+      checkbox.checked = !isActor;
+      alert('Failed to update actor status: ' + error.message);
+    });
+  }
+
+  function initializeTagsFunctionality() {
+    // Add tag button click handlers
+    document.addEventListener('click', function (e) {
+      if (e.target.classList.contains('add-tag-btn') || e.target.closest('.add-tag-btn')) {
+        const button = e.target.classList.contains('add-tag-btn') ? e.target : e.target.closest('.add-tag-btn');
+        const videoId = button.getAttribute('data-video-id');
+        const container = button.closest('.tag-input-container');
+        const wrapper = container.querySelector('.tag-input-wrapper');
+        const input = container.querySelector('.tag-input');
+        
+        // Show input and focus
+        wrapper.style.display = 'block';
+        button.style.display = 'none';
+        input.focus();
+      }
+      
+      if (e.target.classList.contains('remove-tag-btn')) {
+        const videoId = e.target.getAttribute('data-video-id');
+        const tag = e.target.getAttribute('data-tag');
+        removeTag(videoId, tag, e.target);
+      }
+    });
+
+    // Tag input handlers
+    document.addEventListener('input', function (e) {
+      if (e.target.classList.contains('tag-input')) {
+        const query = e.target.value.trim();
+        const videoId = e.target.getAttribute('data-video-id');
+        
+        if (query.length >= 1) {
+          showTagSuggestions(videoId, query, e.target);
+        } else {
+          hideTagSuggestions(e.target);
+        }
+      }
+    });
+
+    // Handle keydown events in tag input
+    document.addEventListener('keydown', function (e) {
+      if (e.target.classList.contains('tag-input')) {
+        const input = e.target;
+        const suggestions = input.closest('.tag-input-container').querySelector('.tag-suggestions');
+        
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          const highlighted = suggestions.querySelector('.highlighted');
+          if (highlighted) {
+            selectSuggestion(input, highlighted.textContent);
+          } else if (input.value.trim()) {
+            addTag(input.getAttribute('data-video-id'), input.value.trim(), input);
+          }
+        } else if (e.key === 'Escape') {
+          hideTagSuggestions(input);
+          input.blur();
+        } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          navigateSuggestions(suggestions, e.key === 'ArrowDown' ? 1 : -1);
+        } else if (e.key === 'Backspace' && input.value === '') {
+          // Could implement tag deletion on backspace if needed
+        }
+      }
+    });
+
+    // Click outside to hide suggestions and inputs
+    document.addEventListener('click', function (e) {
+      if (!e.target.closest('.tag-input-container')) {
+        // Hide all tag input wrappers and show add buttons
+        const containers = document.querySelectorAll('.tag-input-container');
+        containers.forEach(container => {
+          const wrapper = container.querySelector('.tag-input-wrapper');
+          const addBtn = container.querySelector('.add-tag-btn');
+          const input = container.querySelector('.tag-input');
+          
+          if (wrapper && addBtn && input) {
+            wrapper.style.display = 'none';
+            addBtn.style.display = 'inline-block';
+            input.value = '';
+          }
+        });
+        
+        // Hide all suggestions
+        const suggestions = document.querySelectorAll('.tag-suggestions');
+        suggestions.forEach(s => {
+          s.style.display = 'none';
+        });
+      }
+    });
+  }
+
+  function showTagSuggestions(videoId, query, input) {
+    console.log('Fetching tag suggestions for query:', query);
+    
+    fetch(`/api/tags/search?query=${encodeURIComponent(query)}`)
+      .then(response => {
+        console.log('Tag search response status:', response.status);
+        return response.json();
+      })
+      .then(data => {
+        console.log('Tag search response data:', data);
+        const container = input.closest('.tag-input-container');
+        const suggestions = container.querySelector('.tag-suggestions');
+        
+        suggestions.innerHTML = '';
+        
+        if (data.tags && data.tags.length > 0) {
+          data.tags.forEach(tag => {
+            const item = document.createElement('div');
+            item.className = 'tag-suggestion-item';
+            item.textContent = tag;
+            item.addEventListener('click', function() {
+              selectSuggestion(input, tag);
+            });
+            suggestions.appendChild(item);
+          });
+          suggestions.style.display = 'block';
+        } else {
+          suggestions.style.display = 'none';
+        }
+      })
+      .catch(error => {
+        console.error('Error fetching tag suggestions:', error);
+        hideTagSuggestions(input);
+      });
+  }
+
+  function hideTagSuggestions(input) {
+    const suggestions = input.closest('.tag-input-container').querySelector('.tag-suggestions');
+    suggestions.style.display = 'none';
+  }
+
+  function navigateSuggestions(suggestions, direction) {
+    const items = suggestions.querySelectorAll('.tag-suggestion-item');
+    const highlighted = suggestions.querySelector('.highlighted');
+    
+    let newIndex = -1;
+    if (highlighted) {
+      const currentIndex = Array.from(items).indexOf(highlighted);
+      newIndex = currentIndex + direction;
+    } else {
+      newIndex = direction > 0 ? 0 : items.length - 1;
+    }
+    
+    // Remove highlight from all items
+    items.forEach(item => item.classList.remove('highlighted'));
+    
+    if (newIndex >= 0 && newIndex < items.length) {
+      items[newIndex].classList.add('highlighted');
+    } else if (items.length > 0) {
+      // Wrap around
+      const wrapIndex = newIndex < 0 ? items.length - 1 : 0;
+      items[wrapIndex].classList.add('highlighted');
+    }
+  }
+
+  function selectSuggestion(input, tag) {
+    input.value = '';
+    hideTagSuggestions(input);
+    addTag(input.getAttribute('data-video-id'), tag, input);
+  }
+
+  function addTag(videoId, tag, input) {
+    // Hide input
+    const container = input.closest('.tag-input-container');
+    const wrapper = container.querySelector('.tag-input-wrapper');
+    const addBtn = container.querySelector('.add-tag-btn');
+    
+    wrapper.style.display = 'none';
+    addBtn.style.display = 'inline-block';
+    input.value = '';
+
+    // Add tag via API
+    console.log('Adding tag:', tag, 'to video:', videoId);
+    
+    fetch(`/api/video/${videoId}/tags`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ tag: tag })
+    })
+    .then(response => {
+      console.log('Response status:', response.status);
+      return response.json();
+    })
+    .then(data => {
+      console.log('Response data:', data);
+      if (data.success) {
+        // Update UI immediately
+        updateTagDisplay(videoId, tag, true);
+        // Re-apply colors to ensure all tags have colors
+        applyTagColors();
+        console.log('Tag added successfully');
+      } else {
+        alert('Failed to add tag: ' + (data.error || 'Unknown error'));
+      }
+    })
+    .catch(error => {
+      console.error('Error adding tag:', error);
+      alert('Failed to add tag: ' + error.message);
+    });
+  }
+
+  function removeTag(videoId, tag, element) {
+    if (confirm(`Remove tag "${tag}"?`)) {
+      fetch(`/api/video/${videoId}/tags/${encodeURIComponent(tag)}`, {
+        method: 'DELETE'
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          // Remove from UI
+          const badge = element.closest('.tag-badge');
+          badge.remove();
+          
+          // Re-apply colors to remaining tags
+          applyTagColors();
+        } else {
+          alert('Failed to remove tag: ' + (data.error || 'Unknown error'));
+        }
+      })
+      .catch(error => {
+        console.error('Error removing tag:', error);
+        alert('Failed to remove tag');
+      });
+    }
+  }
+
+  function updateTagDisplay(videoId, tag, added) {
+    const container = document.querySelector(`[data-video-id="${videoId}"]`);
+    const displayArea = container.querySelector('.tags-display');
+    const noTagsMsg = displayArea.querySelector('small.text-muted');
+    
+    if (added) {
+      // Hide "No tags" message if present
+      if (noTagsMsg) {
+        noTagsMsg.remove();
+      }
+      
+      // Create tag badge
+      const tagBadge = document.createElement('span');
+      tagBadge.className = 'badge bg-secondary me-1 mb-1 tag-badge';
+      tagBadge.setAttribute('data-tag', tag);
+      tagBadge.innerHTML = `
+        ${tag}
+        <button type="button" class="btn-close btn-close-white ms-1 remove-tag-btn" 
+                data-video-id="${videoId}" data-tag="${tag}" 
+                aria-label="Remove tag" style="font-size: 0.6em;"></button>
+      `;
+      displayArea.appendChild(tagBadge);
+      
+      // Apply color to the new tag badge
+      const color = getTagColor(tag);
+      tagBadge.style.backgroundColor = color;
+      tagBadge.style.color = 'white';
+      tagBadge.style.border = 'none';
+      
+      // Update close button for colored background
+      const closeBtn = tagBadge.querySelector('.remove-tag-btn');
+      if (closeBtn) {
+        closeBtn.classList.remove('btn-close-white');
+        closeBtn.classList.add('btn-close');
+        closeBtn.style.filter = 'invert(1)';
+      }
+    }
+  }
 </script>
+
+<style>
+/* Enhanced tag styling */
+.tag-badge {
+  transition: all 0.2s ease;
+  border-radius: 12px;
+  padding: 4px 8px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border: 1px solid rgba(255,255,255,0.2);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.tag-badge:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+}
+
+.tag-badge .remove-tag-btn {
+  transition: all 0.2s ease;
+}
+
+.tag-badge .remove-tag-btn:hover {
+  transform: scale(1.1);
+}
+
+/* Ensure good contrast for light colored tags */
+.tag-badge[data-tag*="light"], 
+.tag-badge[data-tag*="white"], 
+.tag-badge[data-tag*="yellow"],
+.tag-badge[data-tag*="cream"] {
+  color: #333 !important;
+  border-color: rgba(0,0,0,0.1);
+}
+
+.tag-badge[data-tag*="light"] .remove-tag-btn,
+.tag-badge[data-tag*="white"] .remove-tag-btn,
+.tag-badge[data-tag*="yellow"] .remove-tag-btn,
+.tag-badge[data-tag*="cream"] .remove-tag-btn {
+  filter: invert(0) !important;
+}
+</style>
 {% endblock %}

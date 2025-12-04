@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from bson.objectid import ObjectId
 import os
@@ -106,9 +106,12 @@ class CompilationExporter:
             # Format timestamp and title
             timestamp = timestamp_entry.get('timestamp', '0:00')
             title = timestamp_entry.get('title', 'Untitled Video')
+            
+            # Clean the title by removing everything after "|" character
+            clean_title = self._clean_video_title(title)
 
             # Add timestamp and video name
-            content_lines.append(f"{timestamp} {title}")
+            content_lines.append(f"{timestamp} {clean_title}")
 
         return "\n".join(content_lines)
 
@@ -134,6 +137,12 @@ class CompilationExporter:
             return f"{number / 1_000:.1f}K"
         else:
             return str(number)
+
+    def _clean_video_title(self, title: str) -> str:
+        """Clean video title by removing everything after the '|' character"""
+        if '|' in title:
+            return title.split('|')[0].strip()
+        return title.strip()
 
     def _sanitize_filename(self, filename: str) -> str:
         """Sanitize filename for safe file system usage"""

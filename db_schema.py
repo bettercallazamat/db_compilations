@@ -35,6 +35,13 @@ class DatabaseSchema:
             IndexModel([("timestamps.title", "text")]),
         ]
 
+        # Video blacklist collection indexes
+        blacklist_indexes = [
+            IndexModel([("video_id", ASCENDING)], unique=True),
+            IndexModel([("added_date", DESCENDING)]),
+            IndexModel([("added_by", ASCENDING)]),
+        ]
+
         # Create indexes
         try:
             self.db.videos.create_indexes(videos_indexes)
@@ -47,6 +54,12 @@ class DatabaseSchema:
             print("✅ Compilations collection indexes created successfully")
         except Exception as e:
             print(f"❌ Error creating compilations indexes: {e}")
+
+        try:
+            self.db.video_blacklist.create_indexes(blacklist_indexes)
+            print("✅ Video blacklist collection indexes created successfully")
+        except Exception as e:
+            print(f"❌ Error creating blacklist indexes: {e}")
 
     def get_collection_info(self):
         """Get information about collections and their sizes"""
