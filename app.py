@@ -78,6 +78,10 @@ def index():
     compilation_filter = request.args.get('compilation')
     retention_filter = request.args.get('retention')
     tag_filter = request.args.get('tag')
+    
+    # Get sort parameters
+    sort_column = request.args.get('sort', '')
+    sort_order = request.args.get('order', 'desc')
 
     # Build MongoDB query
     query = {}

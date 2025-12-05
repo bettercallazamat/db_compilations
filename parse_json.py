@@ -512,6 +512,10 @@ def index():
     retention_filter = request.args.get('retention')  # New filter
     tag_filter = request.args.get('tag')
     
+    # Get sort parameters
+    sort_column = request.args.get('sort', '')
+    sort_order = request.args.get('order', 'desc')
+    
     # Build precise search query focused on titles
     query = {}
     if search_query:
@@ -557,6 +561,28 @@ def index():
     total = videos_collection.count_documents(query)
 
     # Enhanced video retrieval with additional fields
+    # Build sort criteria
+    sort_criteria = []
+    if sort_column:
+        if sort_column == 'views':
+            sort_field = 'view_count'
+        elif sort_column == 'retention':
+            sort_field = 'retention_30s'
+        elif sort_column == 'published_at':
+            sort_field = 'published_at'
+        elif sort_column == 'duration':
+            sort_field = 'duration_seconds'
+        elif sort_column == 'likes':
+            sort_field = 'like_count'
+        else:
+            sort_field = 'published_at'  # Default fallback
+        
+        sort_direction = -1 if sort_order == 'desc' else 1
+        sort_criteria.append((sort_field, sort_direction))
+    else:
+        # Default sorting
+        sort_criteria.append(('published_at', -1))
+    
     videos = list(videos_collection.find(query, {
         'title': 1, 'video_id': 1, 'published_at': 1, 'thumbnail_url': 1,
         'duration_seconds': 1, 'view_count': 1, 'like_count': 1,
@@ -564,7 +590,7 @@ def index():
         'description': 1, 'tags': 1, 'retention_30s': 1,
         'user_compilation_usage': 1, 'compilation_usage_stats': 1
     })
-    .sort('published_at', -1)
+    .sort(sort_criteria)
     .skip((page - 1) * per_page)
     .limit(per_page))
 
@@ -595,6 +621,8 @@ def index():
                            compilation_filter=compilation_filter,
                            retention_filter=retention_filter,
                            tag_filter=tag_filter,
+                           sort_column=sort_column,
+                           sort_order=sort_order,
                            available_tags=available_tags,
                            quick_stats=quick_stats,
                            total=total,

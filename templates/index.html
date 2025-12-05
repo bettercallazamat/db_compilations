@@ -133,9 +133,35 @@
           <th style="width: 100px;">Thumbnail</th>
           <th style="width: 300px;">Title</th>
           <th style="width: 120px;">Duration</th>
-          <th style="width: 100px;">Views</th>
+          <th style="width: 100px;">
+            <div class="d-flex align-items-center justify-content-between">
+              <span>Views</span>
+              <button type="button" class="btn-sort" data-column="views" data-sort="{{ 'desc' if sort_column == 'views' and sort_order == 'desc' else 'asc' if sort_column == 'views' and sort_order == 'asc' else 'none' }}" title="Sort by Views">
+                {% if sort_column == 'views' and sort_order == 'desc' %}
+                  <i class="fas fa-sort-down sort-active"></i>
+                {% elif sort_column == 'views' and sort_order == 'asc' %}
+                  <i class="fas fa-sort-up sort-active"></i>
+                {% else %}
+                  <i class="fas fa-sort"></i>
+                {% endif %}
+              </button>
+            </div>
+          </th>
           <th style="width: 80px;">Likes</th>
-          <th style="width: 120px;">Retention</th>
+          <th style="width: 120px;">
+            <div class="d-flex align-items-center justify-content-between">
+              <span>Retention</span>
+              <button type="button" class="btn-sort" data-column="retention" data-sort="{{ 'desc' if sort_column == 'retention' and sort_order == 'desc' else 'asc' if sort_column == 'retention' and sort_order == 'asc' else 'none' }}" title="Sort by Retention">
+                {% if sort_column == 'retention' and sort_order == 'desc' %}
+                  <i class="fas fa-sort-down sort-active"></i>
+                {% elif sort_column == 'retention' and sort_order == 'asc' %}
+                  <i class="fas fa-sort-up sort-active"></i>
+                {% else %}
+                  <i class="fas fa-sort"></i>
+                {% endif %}
+              </button>
+            </div>
+          </th>
           <th style="width: 120px;">Tags</th>
           <th style="width: 80px;">Actor</th>
           <th style="width: 100px;">Type</th>
@@ -204,11 +230,7 @@
           <td>
             {% set retention = video.retention_30s|default(0) %}
             <div class="retention-bar mb-1">
-              <div class="retention-fill 
-                                {% if retention >= 70 %}retention-high
-                                {% elif retention >= 50 %}retention-medium
-                                {% else %}retention-low{% endif %}" style="width: {{ retention }}%">
-              </div>
+              <div class="retention-fill retention-high" style="width: {{ retention }}%"></div>
             </div>
             <small class="
                             {% if retention >= 70 %}text-success
@@ -426,6 +448,9 @@
     
     // Initialize actor checkbox functionality
     initializeActorCheckboxes();
+    
+    // Initialize sorting functionality
+    initializeSorting();
   });
 
   // Search form enhancement
@@ -805,6 +830,64 @@
       }
     }
   }
+
+  // Initialize sorting functionality
+  function initializeSorting() {
+    const sortButtons = document.querySelectorAll('.btn-sort');
+    
+    sortButtons.forEach(button => {
+      button.addEventListener('click', function() {
+        const column = this.getAttribute('data-column');
+        const currentSort = this.getAttribute('data-sort');
+        
+        // Toggle sort order: none -> desc -> asc -> none
+        let newSort;
+        if (currentSort === 'none') {
+          newSort = 'desc';
+        } else if (currentSort === 'desc') {
+          newSort = 'asc';
+        } else {
+          newSort = 'none';
+        }
+        
+        // Redirect to server with sort parameters
+        const url = new URL(window.location);
+        
+        if (newSort === 'none') {
+          url.searchParams.delete('sort');
+          url.searchParams.delete('order');
+        } else {
+          url.searchParams.set('sort', column);
+          url.searchParams.set('order', newSort);
+        }
+        
+        // Reset page to 1 when sorting
+        url.searchParams.set('page', '1');
+        
+        // Navigate to the new URL
+        window.location.href = url.toString();
+      });
+    });
+    
+    // Check URL parameters for existing sort and update button states
+    const urlParams = new URLSearchParams(window.location.search);
+    const sortColumn = urlParams.get('sort');
+    const sortOrder = urlParams.get('order');
+    
+    if (sortColumn && sortOrder) {
+      const button = document.querySelector(`[data-column="${sortColumn}"]`);
+      if (button) {
+        button.setAttribute('data-sort', sortOrder);
+        const icon = button.querySelector('i');
+        if (icon) {
+          icon.className = sortOrder === 'desc' ? 'fas fa-sort-down sort-active' : 'fas fa-sort-up sort-active';
+        }
+        button.classList.add('sort-active');
+      }
+    }
+  }
+
+
 </script>
 
 <style>
@@ -846,6 +929,59 @@
 .tag-badge[data-tag*="yellow"] .remove-tag-btn,
 .tag-badge[data-tag*="cream"] .remove-tag-btn {
   filter: invert(0) !important;
+}
+
+/* Sorting button styles */
+.btn-sort {
+  background: none;
+  border: none;
+  color: #6c757d;
+  cursor: pointer;
+  padding: 2px 4px;
+  margin-left: 4px;
+  border-radius: 3px;
+  transition: all 0.2s ease;
+  font-size: 0.8rem;
+}
+
+.btn-sort:hover {
+  color: #495057;
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.btn-sort.sort-active {
+  color: #495057;
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+.btn-sort i {
+  font-size: 0.75rem;
+}
+
+/* Retention bar styling */
+.retention-bar {
+  height: 8px;
+  background-color: rgba(0,0,0,0.1);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.retention-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.retention-high {
+  background-color: #28a745;
+}
+
+.retention-medium {
+  background-color: #ffc107;
+}
+
+.retention-low {
+  background-color: #dc3545;
 }
 </style>
 {% endblock %}
