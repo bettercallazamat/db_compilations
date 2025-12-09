@@ -15,6 +15,12 @@
           <p class="mb-0 opacity-75">
             Upload JSON files containing video data to populate your database
           </p>
+          <div class="mt-2">
+            <small class="opacity-75">
+              <i class="fas fa-tv me-1"></i>
+              <strong>Current Channel:</strong> <span id="current-channel-display">Loading...</span>
+            </small>
+          </div>
         </div>
         <div class="col-md-4 text-end">
           <i class="fas fa-database fa-3x opacity-50"></i>
@@ -567,7 +573,34 @@
 
     // Load import history on page load
     loadImportHistory();
+    
+    // Load current channel information
+    loadCurrentChannel();
   });
+
+  function loadCurrentChannel() {
+    fetch('/api/channels/current')
+      .then(response => response.json())
+      .then(data => {
+        if (data.success && data.current_channel) {
+          const channelName = data.current_channel.name;
+          const channelDescription = data.current_channel.description;
+          const displayElement = document.getElementById('current-channel-display');
+          
+          if (channelDescription) {
+            displayElement.textContent = `${channelName} (${channelDescription})`;
+          } else {
+            displayElement.textContent = channelName;
+          }
+        } else {
+          document.getElementById('current-channel-display').textContent = 'No channel selected';
+        }
+      })
+      .catch(error => {
+        console.error('Error loading current channel:', error);
+        document.getElementById('current-channel-display').textContent = 'Error loading channel';
+      });
+  }
 
   function loadImportHistory() {
     const historyContainer = document.getElementById('import-history');

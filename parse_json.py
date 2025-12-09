@@ -34,6 +34,52 @@ videos_collection = mongo.db.videos
 compilations_collection = mongo.db.compilations
 user_compilations_collection = mongo.db.user_compilations  # New collection for user-created compilations
 blacklist_collection = mongo.db.video_blacklist  # Collection for blacklisted videos
+channels_collection = mongo.db.channels  # Collection for channel management
+
+# Initialize default channel if none exists
+def initialize_default_channel():
+    """Initialize default channel if none exists"""
+    existing_channels = channels_collection.count_documents({})
+    if existing_channels == 0:
+        default_channel = {
+            'name': 'DBillions Main Channel',
+            'description': 'Main DBillions YouTube channel',
+            'created_at': datetime.utcnow(),
+            'is_default': True
+        }
+        result = channels_collection.insert_one(default_channel)
+        return str(result.inserted_id)
+    return None
+
+# Initialize default channel on startup
+default_channel_id = initialize_default_channel()
+
+# Helper function to get current channel from session
+def get_current_channel():
+    """Get the current channel from session or database"""
+    channel_id = session.get('current_channel_id')
+    if channel_id:
+        try:
+            channel = channels_collection.find_one({'_id': ObjectId(channel_id)})
+            if channel:
+                return channel
+        except:
+            pass
+    
+    # Fallback to default channel
+    default_channel = channels_collection.find_one({'is_default': True})
+    if default_channel:
+        session['current_channel_id'] = str(default_channel['_id'])
+        return default_channel
+    
+    # If no default exists, create one and use it
+    new_channel_id = initialize_default_channel()
+    if new_channel_id:
+        channel = channels_collection.find_one({'_id': ObjectId(new_channel_id)})
+        session['current_channel_id'] = new_channel_id
+        return channel
+    
+    return None
 
 # Initialize managers with enhanced functionality
 compilation_manager = CompilationManager(
@@ -179,6 +225,10 @@ class VideoManager:
                 if existing:
                     continue
 
+                # Get current channel for import
+                current_channel = get_current_channel()
+                current_channel_id = str(current_channel['_id']) if current_channel else None
+                
                 # Prepare enhanced video document with new compilation tracking fields
                 video_doc = {
                     'title': video_data.get('title', ''),
@@ -195,6 +245,8 @@ class VideoManager:
                     'average_view_duration': video_data.get('average_view_duration', 0),
                     'average_view_percentage': video_data.get('average_view_percentage', 0),
                     'retention_30s': video_data.get('retention_30s', 0),
+                    # Channel association
+                    'channel_id': current_channel_id,
                     # Enhanced fields for compilation management
                     'actor': False,
                     'tags': [],
@@ -516,8 +568,26 @@ def index():
     sort_column = request.args.get('sort', '')
     sort_order = request.args.get('order', 'desc')
     
+    # Get current channel for filtering
+    current_channel = get_current_channel()
+    current_channel_id = str(current_channel['_id']) if current_channel else None
+    
     # Build precise search query focused on titles
     query = {}
+    
+    # Filter by current channel - handle both videos with channel_id and legacy videos
+    if current_channel_id:
+        # For the default channel, show videos that either belong to this channel OR have no channel_id (legacy videos)
+        default_channel = channels_collection.find_one({'is_default': True})
+        if default_channel and str(default_channel['_id']) == current_channel_id:
+            query['$or'] = [
+                {'channel_id': current_channel_id},
+                {'channel_id': {'$exists': False}}  # Include legacy videos without channel_id
+            ]
+        else:
+            # For non-default channels, only show videos specifically for that channel
+            query['channel_id'] = current_channel_id
+    
     if search_query:
         # Escape special regex characters for safe searching
         import re
@@ -599,16 +669,36 @@ def index():
     has_prev = page > 1
     has_next = page < total_pages
 
-    # Get quick statistics for dashboard
+    # Get quick statistics for dashboard (consistent with channel filtering)
+    stats_query = {}
+    if current_channel_id:
+        # Apply the same filtering logic as for videos
+        default_channel = channels_collection.find_one({'is_default': True})
+        if default_channel and str(default_channel['_id']) == current_channel_id:
+            stats_query['$or'] = [
+                {'channel_id': current_channel_id},
+                {'channel_id': {'$exists': False}}
+            ]
+        else:
+            stats_query['channel_id'] = current_channel_id
+
     quick_stats = {
         'total_videos': total,
-        'compilations': videos_collection.count_documents({'is_compilation': True}),
-        'high_retention': videos_collection.count_documents({'retention_30s': {'$gte': 70}}),
+        'compilations': videos_collection.count_documents({**stats_query, 'is_compilation': True}),
+        'high_retention': videos_collection.count_documents({**stats_query, 'retention_30s': {'$gte': 70}}),
         'user_compilations': user_compilations_collection.count_documents({})
     }
 
     # Get available tags for filter dropdown
     available_tags = get_available_tags()
+
+    # Get current channel information
+    current_channel = get_current_channel()
+    current_channel_info = {
+        'id': str(current_channel['_id']) if current_channel else None,
+        'name': current_channel.get('name', 'Unknown Channel') if current_channel else 'Unknown Channel',
+        'description': current_channel.get('description', '') if current_channel else ''
+    }
 
     return render_template('index.html',
                            videos=videos,
@@ -626,12 +716,30 @@ def index():
                            available_tags=available_tags,
                            quick_stats=quick_stats,
                            total=total,
-                           now=datetime.now())
+                           now=datetime.now(),
+                           current_channel=current_channel_info)
 
 
 def get_available_tags():
-    """Get all available tags for filter dropdown"""
+    """Get all available tags for filter dropdown (channel-aware)"""
+    # Get current channel for filtering
+    current_channel = get_current_channel()
+    current_channel_id = str(current_channel['_id']) if current_channel else None
+    
+    # Build match query consistent with video filtering
+    match_query = {}
+    if current_channel_id:
+        default_channel = channels_collection.find_one({'is_default': True})
+        if default_channel and str(default_channel['_id']) == current_channel_id:
+            match_query['$or'] = [
+                {'channel_id': current_channel_id},
+                {'channel_id': {'$exists': False}}
+            ]
+        else:
+            match_query['channel_id'] = current_channel_id
+    
     pipeline = [
+        {'$match': match_query},
         {'$unwind': '$tags'},
         {'$group': {'_id': '$tags', 'count': {'$sum': 1}}},
         {'$sort': {'count': -1, '_id': 1}}
@@ -902,8 +1010,13 @@ def import_data():
             return jsonify({'error': 'No file selected'}), 400
 
         if file and file.filename.endswith('.json'):
+            # Get current channel for import
+            current_channel = get_current_channel()
+            if not current_channel:
+                return jsonify({'error': 'No channel selected'}), 400
+                
             # Save uploaded file temporarily
-            temp_path = 'temp_upload.json'
+            temp_path = f'temp_upload_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
             file.save(temp_path)
 
             try:
@@ -914,11 +1027,13 @@ def import_data():
                 else:
                     imported, total = result
                     os.remove(temp_path)  # Clean up
+                    channel_name = current_channel.get('name', 'Unknown Channel')
                     return jsonify({
                         'success': True,
                         'imported': imported,
                         'total': total,
-                        'message': f'Successfully imported {imported} out of {total} videos'
+                        'channel_name': channel_name,
+                        'message': f'Successfully imported {imported} out of {total} videos to {channel_name}'
                     })
             except Exception as e:
                 if os.path.exists(temp_path):
@@ -953,6 +1068,11 @@ def import_videos():
             'update_existing', 'true').lower() == 'true'
         validate_data = request.form.get(
             'validate_data', 'true').lower() == 'true'
+        
+        # Get current channel for import
+        current_channel = get_current_channel()
+        if not current_channel:
+            return jsonify({'success': False, 'error': 'No channel selected'}), 400
 
         # Save uploaded file temporarily
         temp_path = f'temp_upload_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
@@ -2697,6 +2817,244 @@ def api_cleanup_exports():
         return jsonify({
             'success': False,
             'error': f'Cleanup failed: {str(e)}'
+        })
+
+
+# ==================== CHANNEL MANAGEMENT ROUTES ====================
+
+@app.route('/api/channels')
+@login_required
+def api_get_channels():
+    """API endpoint to get all channels"""
+    try:
+        channels = list(channels_collection.find({}).sort('created_at', 1))
+        
+        # Convert ObjectId to string for JSON serialization
+        for channel in channels:
+            channel['_id'] = str(channel['_id'])
+            
+        return jsonify({
+            'success': True,
+            'channels': channels
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
+
+@app.route('/api/channels/current')
+@login_required
+def api_get_current_channel():
+    """API endpoint to get the current channel"""
+    try:
+        current_channel = get_current_channel()
+        if current_channel:
+            current_channel['_id'] = str(current_channel['_id'])
+            return jsonify({
+                'success': True,
+                'current_channel': current_channel
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'No channel found'
+            }), 404
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
+
+@app.route('/api/channels/switch', methods=['POST'])
+@login_required
+def api_switch_channel():
+    """API endpoint to switch to a different channel"""
+    try:
+        data = request.get_json()
+        channel_id = data.get('channel_id')
+        
+        if not channel_id:
+            return jsonify({
+                'success': False,
+                'error': 'Channel ID is required'
+            }), 400
+        
+        # Verify channel exists
+        channel = channels_collection.find_one({'_id': ObjectId(channel_id)})
+        if not channel:
+            return jsonify({
+                'success': False,
+                'error': 'Channel not found'
+            }), 404
+        
+        # Set as current channel in session
+        session['current_channel_id'] = channel_id
+        
+        return jsonify({
+            'success': True,
+            'message': f'Switched to channel: {channel.get("name", "Unknown")}'
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
+
+@app.route('/api/channels', methods=['POST'])
+@login_required
+def api_create_channel():
+    """API endpoint to create a new channel"""
+    try:
+        data = request.get_json()
+        name = data.get('name', '').strip()
+        description = data.get('description', '').strip()
+        
+        if not name:
+            return jsonify({
+                'success': False,
+                'error': 'Channel name is required'
+            }), 400
+        
+        # Check if channel name already exists
+        existing = channels_collection.find_one({'name': name})
+        if existing:
+            return jsonify({
+                'success': False,
+                'error': 'Channel name already exists'
+            }), 400
+        
+        # Create new channel
+        new_channel = {
+            'name': name,
+            'description': description,
+            'created_at': datetime.utcnow(),
+            'is_default': False
+        }
+        
+        result = channels_collection.insert_one(new_channel)
+        channel_id = str(result.inserted_id)
+        
+        # If this is the first channel, make it default
+        total_channels = channels_collection.count_documents({})
+        if total_channels == 1:
+            channels_collection.update_one(
+                {'_id': result.inserted_id},
+                {'$set': {'is_default': True}}
+            )
+        
+        return jsonify({
+            'success': True,
+            'channel_id': channel_id,
+            'message': f'Channel "{name}" created successfully'
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
+
+@app.route('/api/channels/<channel_id>', methods=['PUT'])
+@login_required
+def api_update_channel(channel_id):
+    """API endpoint to update a channel"""
+    try:
+        data = request.get_json()
+        name = data.get('name', '').strip()
+        description = data.get('description', '').strip()
+        
+        if not name:
+            return jsonify({
+                'success': False,
+                'error': 'Channel name is required'
+            }), 400
+        
+        # Check if channel name already exists (excluding current channel)
+        existing = channels_collection.find_one({
+            'name': name,
+            '_id': {'$ne': ObjectId(channel_id)}
+        })
+        if existing:
+            return jsonify({
+                'success': False,
+                'error': 'Channel name already exists'
+            }), 400
+        
+        # Update channel
+        result = channels_collection.update_one(
+            {'_id': ObjectId(channel_id)},
+            {
+                '$set': {
+                    'name': name,
+                    'description': description,
+                    'updated_at': datetime.utcnow()
+                }
+            }
+        )
+        
+        if result.matched_count == 0:
+            return jsonify({
+                'success': False,
+                'error': 'Channel not found'
+            }), 404
+        
+        return jsonify({
+            'success': True,
+            'message': 'Channel updated successfully'
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
+
+@app.route('/api/channels/<channel_id>', methods=['DELETE'])
+@login_required
+def api_delete_channel(channel_id):
+    """API endpoint to delete a channel"""
+    try:
+        # Don't allow deleting the default channel
+        channel = channels_collection.find_one({'_id': ObjectId(channel_id)})
+        if not channel:
+            return jsonify({
+                'success': False,
+                'error': 'Channel not found'
+            }), 404
+        
+        if channel.get('is_default', False):
+            return jsonify({
+                'success': False,
+                'error': 'Cannot delete the default channel'
+            }), 400
+        
+        # If this is the current channel, switch to default
+        if session.get('current_channel_id') == channel_id:
+            default_channel = channels_collection.find_one({'is_default': True})
+            if default_channel:
+                session['current_channel_id'] = str(default_channel['_id'])
+        
+        # Delete channel
+        result = channels_collection.delete_one({'_id': ObjectId(channel_id)})
+        
+        if result.deleted_count == 0:
+            return jsonify({
+                'success': False,
+                'error': 'Channel not found'
+            }), 404
+        
+        return jsonify({
+            'success': True,
+            'message': 'Channel deleted successfully'
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
         })
 
 

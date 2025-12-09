@@ -326,6 +326,25 @@
           </li>
         </ul>
 
+        <!-- Channel Selector -->
+        <ul class="navbar-nav">
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle" href="#" id="channelDropdown" role="button" data-bs-toggle="dropdown">
+              <i class="fas fa-tv me-1"></i>
+              <span id="current-channel-name">Loading...</span>
+            </a>
+            <ul class="dropdown-menu dropdown-menu-end" id="channel-list">
+              <!-- Channels will be loaded dynamically -->
+              <li><hr class="dropdown-divider"></li>
+              <li>
+                <a class="dropdown-item" href="#" onclick="showAddChannelModal()">
+                  <i class="fas fa-plus me-2"></i>Add New Channel
+                </a>
+              </li>
+            </ul>
+          </li>
+        </ul>
+
         <ul class="navbar-nav">
           <li class="nav-item">
             <a class="nav-link" href="/import">
@@ -411,8 +430,209 @@
       tooltipTriggerList.map(function (tooltipTriggerEl) {
         return new bootstrap.Tooltip(tooltipTriggerEl);
       });
+      
+      // Load channels and set up channel management
+      loadChannels();
     });
+
+    // Channel Management Functions
+    function loadChannels() {
+      // First get the current channel, then load all channels
+      fetch('/api/channels/current')
+        .then(response => response.json())
+        .then(currentData => {
+          if (currentData.success) {
+            window.currentChannelId = currentData.current_channel._id;
+            
+            // Now load all channels
+            return fetch('/api/channels');
+          } else {
+            console.error('Failed to get current channel:', currentData.error);
+            return fetch('/api/channels');
+          }
+        })
+        .then(response => response.json())
+        .then(data => {
+          if (data.success) {
+            updateChannelDropdown(data.channels);
+          } else {
+            console.error('Failed to load channels:', data.error);
+          }
+        })
+        .catch(error => {
+          console.error('Error loading channels:', error);
+        });
+    }
+
+    function updateChannelDropdown(channels) {
+      const channelList = document.getElementById('channel-list');
+      const channelNameElement = document.getElementById('current-channel-name');
+      
+      // Clear existing channels (except the divider and add channel option)
+      const divider = channelList.querySelector('.dropdown-divider');
+      const addChannelOption = channelList.querySelector('li:last-child');
+      
+      channelList.innerHTML = '';
+      channelList.appendChild(divider);
+      channelList.appendChild(addChannelOption);
+      
+      // Get current channel from our stored variable
+      const currentChannelId = window.currentChannelId;
+      const currentChannel = channels.find(channel => channel._id === currentChannelId);
+      
+      // Add channels to dropdown
+      channels.forEach(channel => {
+        const listItem = document.createElement('li');
+        const link = document.createElement('a');
+        
+        link.className = 'dropdown-item';
+        link.href = '#';
+        link.onclick = () => switchChannel(channel._id);
+        
+        // Add channel name and description
+        const channelDiv = document.createElement('div');
+        channelDiv.className = 'd-flex justify-content-between align-items-center';
+        
+        const channelInfo = document.createElement('div');
+        channelInfo.innerHTML = `
+          <div class="fw-bold">${channel.name}</div>
+          <small class="text-muted">${channel.description || 'No description'}</small>
+        `;
+        
+        const checkIcon = document.createElement('i');
+        if (currentChannelId === channel._id) {
+          checkIcon.className = 'fas fa-check text-success';
+        }
+        
+        channelDiv.appendChild(channelInfo);
+        channelDiv.appendChild(checkIcon);
+        link.appendChild(channelDiv);
+        
+        listItem.appendChild(link);
+        channelList.insertBefore(listItem, divider);
+      });
+      
+      // Update current channel name
+      if (currentChannel) {
+        channelNameElement.textContent = currentChannel.name;
+      } else if (channels.length > 0) {
+        channelNameElement.textContent = channels[0].name;
+      } else {
+        channelNameElement.textContent = 'No Channel';
+      }
+    }
+
+    function switchChannel(channelId) {
+      fetch('/api/channels/switch', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ channel_id: channelId })
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          // Update the current channel ID in memory
+          window.currentChannelId = channelId;
+          
+          // Reload the page to show data for the new channel
+          setTimeout(() => {
+            window.location.reload();
+          }, 100);
+        } else {
+          alert('Failed to switch channel: ' + data.error);
+        }
+      })
+      .catch(error => {
+        console.error('Error switching channel:', error);
+        alert('Failed to switch channel');
+      });
+    }
+
+    function showAddChannelModal() {
+      const modal = new bootstrap.Modal(document.getElementById('addChannelModal'));
+      modal.show();
+      
+      // Clear form
+      document.getElementById('addChannelForm').reset();
+    }
+
+    function createChannel() {
+      const name = document.getElementById('channelName').value.trim();
+      const description = document.getElementById('channelDescription').value.trim();
+      
+      if (!name) {
+        alert('Please enter a channel name');
+        return;
+      }
+      
+      fetch('/api/channels', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: name,
+          description: description
+        })
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          // Close modal
+          const modal = bootstrap.Modal.getInstance(document.getElementById('addChannelModal'));
+          modal.hide();
+          
+          // Reload channels
+          loadChannels();
+          
+          alert('Channel created successfully!');
+        } else {
+          alert('Failed to create channel: ' + data.error);
+        }
+      })
+      .catch(error => {
+        console.error('Error creating channel:', error);
+        alert('Failed to create channel');
+      });
+    }
   </script>
+
+  <!-- Channel Management Modals -->
+  <div class="modal fade" id="addChannelModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">
+            <i class="fas fa-plus me-2"></i>Add New Channel
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <form id="addChannelForm">
+            <div class="mb-3">
+              <label for="channelName" class="form-label">Channel Name *</label>
+              <input type="text" class="form-control" id="channelName" required 
+                     placeholder="Enter channel name">
+              <div class="form-text">Name of the YouTube channel</div>
+            </div>
+            <div class="mb-3">
+              <label for="channelDescription" class="form-label">Description</label>
+              <textarea class="form-control" id="channelDescription" rows="3" 
+                        placeholder="Optional description for the channel"></textarea>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-primary" onclick="createChannel()">
+            <i class="fas fa-plus me-1"></i>Create Channel
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   {% block extra_js %}{% endblock %}
 </body>
