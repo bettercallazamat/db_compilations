@@ -29,6 +29,26 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=60)
 # Initialize extensions
 mongo = PyMongo(app)
 
+# Add custom Jinja2 filters
+@app.template_filter('format_date')
+def format_date_filter(date_str):
+    """Format date string for display"""
+    if not date_str:
+        return 'N/A'
+
+    try:
+        # Handle different date formats
+        if 'T' in date_str:
+            # ISO format with time: "2025-07-05T11:53:31Z"
+            date_obj = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+        else:
+            # Date only format: "2025-07-05"
+            date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+
+        return date_obj.strftime('%Y-%m-%d')
+    except (ValueError, TypeError):
+        return str(date_str)
+
 # Collection references
 videos_collection = mongo.db.videos
 compilations_collection = mongo.db.compilations
@@ -271,6 +291,207 @@ class VideoManager:
             return 0, 0, str(e)
 
     @staticmethod
+    def import_multi_channel_from_json(json_file_path, skip_existing=True, update_existing=False, validate_data=True):
+        """Import videos from multi-channel JSON format"""
+        try:
+            with open(json_file_path, 'r', encoding='utf-8') as file:
+                data = json.load(file)
+
+            if 'channels' not in data:
+                # Fallback to single channel format
+                return VideoManager.enhanced_import_from_json(
+                    json_file_path, skip_existing, update_existing, validate_data)
+
+            channels_data = data.get('channels', {})
+            total_imported = 0
+            total_updated = 0
+            total_skipped = 0
+            total_errors = []
+            channel_results = {}
+
+            print(f"🔄 Starting multi-channel import for {len(channels_data)} channels...")
+
+            for channel_name, channel_info in channels_data.items():
+                print(f"   📺 Processing channel: {channel_name}")
+
+                # Find existing channel by name or similar name
+                channel_doc = channels_collection.find_one({'name': channel_name})
+
+                # If not found, try to find similar names (case-insensitive, partial match)
+                if not channel_doc:
+                    # Look for channels with similar names
+                    similar_channels = list(channels_collection.find({
+                        'name': {'$regex': channel_name.replace(' ', '.*'), '$options': 'i'}
+                    }))
+                    if similar_channels:
+                        # Use the first similar channel found
+                        channel_doc = similar_channels[0]
+                        print(f"     ✓ Found similar channel '{channel_doc['name']}' for '{channel_name}', merging...")
+
+                if not channel_doc:
+                    # Create new channel
+                    new_channel = {
+                        'name': channel_name,
+                        'description': f'Channel: {channel_name}',
+                        'channel_id': channel_info.get('channel_id', ''),
+                        'created_at': datetime.utcnow(),
+                        'is_default': False
+                    }
+                    result = channels_collection.insert_one(new_channel)
+                    channel_id = str(result.inserted_id)
+                    print(f"     ✓ Created new channel with ID: {channel_id}")
+                else:
+                    channel_id = str(channel_doc['_id'])
+                    # Update channel name if it was a merge
+                    if channel_doc['name'] != channel_name:
+                        channels_collection.update_one(
+                            {'_id': channel_doc['_id']},
+                            {'$set': {'name': channel_name}}
+                        )
+                        print(f"     ✓ Updated channel name to: {channel_name}")
+                    else:
+                        print(f"     ✓ Found existing channel with ID: {channel_id}")
+
+                # Update channel statistics if provided
+                if 'channel_statistics' in channel_info:
+                    stats = channel_info['channel_statistics']
+                    update_data = {
+                        'channel_statistics': stats,
+                        'updated_at': datetime.utcnow()
+                    }
+                    channels_collection.update_one(
+                        {'_id': ObjectId(channel_id)},
+                        {'$set': update_data}
+                    )
+                    print(f"     ✓ Updated channel statistics")
+
+                # Import videos for this channel
+                videos = channel_info.get('videos', [])
+                if not videos:
+                    print(f"     ⚠️  No videos found for channel {channel_name}")
+                    continue
+
+                print(f"     📹 Importing {len(videos)} videos for {channel_name}...")
+
+                channel_imported = 0
+                channel_updated = 0
+                channel_skipped = 0
+                channel_errors = []
+
+                # Process videos for this channel
+                for video_data in videos:
+                    try:
+                        video_id = video_data.get('video_id', '')
+                        if not video_id:
+                            channel_errors.append(f'Missing video_id')
+                            continue
+
+                        # Check if video already exists
+                        existing = videos_collection.find_one({'video_id': video_id})
+
+                        if existing:
+                            if skip_existing and not update_existing:
+                                channel_skipped += 1
+                                continue
+                            elif update_existing:
+                                # Update existing video, preserving tags and other fields
+                                update_doc = VideoManager._prepare_video_update(video_data, existing)
+                                update_doc['channel_id'] = channel_id
+                                update_doc['updated_at'] = datetime.utcnow()
+                                result = videos_collection.update_one(
+                                    {'video_id': video_id},
+                                    {'$set': update_doc}
+                                )
+                                if result.modified_count > 0:
+                                    channel_updated += 1
+                                    channel_imported += 1
+                                continue
+                            else:
+                                channel_skipped += 1
+                                continue
+
+                        # Prepare new video document
+                        video_doc = VideoManager._prepare_video_document(video_data)
+                        video_doc['channel_id'] = channel_id
+                        videos_collection.insert_one(video_doc)
+                        channel_imported += 1
+
+                    except Exception as video_error:
+                        channel_errors.append(f'Video {video_id}: {str(video_error)}')
+                        continue
+
+                # Store results for this channel
+                channel_results[channel_name] = {
+                    'channel_id': channel_id,
+                    'imported': channel_imported,
+                    'updated': channel_updated,
+                    'skipped': channel_skipped,
+                    'errors': channel_errors
+                }
+
+                total_imported += channel_imported
+                total_updated += channel_updated
+                total_skipped += channel_skipped
+                total_errors.extend(channel_errors)
+
+                print(f"     ✅ Channel {channel_name}: {channel_imported} imported, {channel_updated} updated, {channel_skipped} skipped, {len(channel_errors)} errors")
+
+            # Create user compilations for each channel
+            print("   🎬 Creating user compilations for each channel...")
+            compilation_creation_results = {}
+            for channel_name, ch_result in channel_results.items():
+                channel_id = ch_result.get('channel_id')
+                if channel_id:
+                    try:
+                        # Create a compilation for this channel
+                        result = compilation_creator.create_compilation(
+                            duration_minutes=25,  # Default 25-minute compilation
+                            title_prefix=f"{channel_name} Compilation",
+                            user_id="system",
+                            channel_id=channel_id,
+                            compilation_type="default"
+                        )
+                        if result.get('success'):
+                            compilation_creation_results[channel_name] = {
+                                'success': True,
+                                'compilation_id': result.get('compilation_id')
+                            }
+                            print(f"     ✓ Created compilation for {channel_name}: {result.get('compilation_id')}")
+                        else:
+                            compilation_creation_results[channel_name] = {
+                                'success': False,
+                                'error': result.get('error')
+                            }
+                            print(f"     ✗ Failed to create compilation for {channel_name}: {result.get('error')}")
+                    except Exception as e:
+                        compilation_creation_results[channel_name] = {
+                            'success': False,
+                            'error': str(e)
+                        }
+                        print(f"     ✗ Error creating compilation for {channel_name}: {str(e)}")
+
+            print(f"   🔄 Processing all compilations...")
+            processing_results = compilation_manager.process_all_compilations()
+            print(f"   ✅ Processing completed:")
+            print(f"     - Videos processed: {processing_results['processed']}")
+            print(f"     - New compilations: {processing_results['new_compilations']}")
+            print(f"     - Updated compilations: {processing_results['updated_compilations']}")
+
+            return {
+                'imported': total_imported,
+                'updated': total_updated,
+                'skipped': total_skipped,
+                'total': total_imported + total_updated + total_skipped,
+                'errors': total_errors,
+                'channel_results': channel_results,
+                'compilation_creation_results': compilation_creation_results,
+                'processing_results': processing_results
+            }
+
+        except Exception as e:
+            return {'error': f'Import failed: {str(e)}'}
+
+    @staticmethod
     def enhanced_import_from_json(json_file_path, skip_existing=True, update_existing=False, validate_data=True):
         """Enhanced import with validation and better error handling"""
         try:
@@ -341,7 +562,7 @@ class VideoManager:
                         elif update_existing:
                             # Update existing video
                             update_doc = VideoManager._prepare_video_update(
-                                video_data)
+                                video_data, existing)
                             result = videos_collection.update_one(
                                 {'video_id': video_id},
                                 {'$set': update_doc}
@@ -466,8 +687,8 @@ class VideoManager:
         }
 
     @staticmethod
-    def _prepare_video_update(video_data):
-        """Prepare update document for existing videos"""
+    def _prepare_video_update(video_data, existing_video=None):
+        """Prepare update document for existing videos, preserving existing tags and other fields"""
         update_doc = {
             'title': video_data.get('title', ''),
             'published_at': video_data.get('published_at', ''),
@@ -495,6 +716,18 @@ class VideoManager:
                     update_doc[field] = data_type(video_data[field])
                 except (ValueError, TypeError):
                     pass  # Skip invalid values
+
+        # Preserve existing tags if not provided in new data
+        if existing_video and 'tags' in existing_video and existing_video['tags']:
+            if not video_data.get('tags'):  # If new data doesn't have tags
+                update_doc['tags'] = existing_video['tags']
+
+        # Preserve other important fields that shouldn't be overwritten
+        preserve_fields = ['actor', 'is_compilation', 'compilation_usage_stats', 'user_compilation_usage']
+        if existing_video:
+            for field in preserve_fields:
+                if field in existing_video and field not in update_doc:
+                    update_doc[field] = existing_video[field]
 
         return update_doc
 
@@ -1079,13 +1312,26 @@ def import_videos():
         file.save(temp_path)
 
         try:
-            # Use the enhanced import method
-            result = VideoManager.enhanced_import_from_json(
-                temp_path,
-                skip_existing=skip_existing,
-                update_existing=update_existing,
-                validate_data=validate_data
-            )
+            # Check if it's multi-channel format
+            with open(temp_path, 'r', encoding='utf-8') as check_file:
+                check_data = json.load(check_file)
+                is_multi_channel = 'channels' in check_data
+
+            # Use appropriate import method
+            if is_multi_channel:
+                result = VideoManager.import_multi_channel_from_json(
+                    temp_path,
+                    skip_existing=skip_existing,
+                    update_existing=update_existing,
+                    validate_data=validate_data
+                )
+            else:
+                result = VideoManager.enhanced_import_from_json(
+                    temp_path,
+                    skip_existing=skip_existing,
+                    update_existing=update_existing,
+                    validate_data=validate_data
+                )
 
             # Clean up temp file
             if os.path.exists(temp_path):
@@ -1097,11 +1343,12 @@ def import_videos():
                     'error': result['error']
                 }), 500
             else:
-                # Create detailed success message
+                # Handle both single and multi-channel results
                 imported = result.get('imported', 0)
                 updated = result.get('updated', 0)
                 total = result.get('total', 0)
                 skipped = result.get('skipped', 0)
+                channel_results = result.get('channel_results', {})
 
                 # Build comprehensive message
                 parts = []
@@ -1113,9 +1360,17 @@ def import_videos():
                         parts.append(f"Added {new_videos} new videos")
                 if skipped > 0:
                     parts.append(f"Skipped {skipped} videos")
-                deleted_count = result.get('deleted_count', 0)
-                if deleted_count > 0:
-                    parts.append(f"Marked {deleted_count} videos as deleted")
+
+                if channel_results:
+                    channel_summary = []
+                    for channel_name, ch_result in channel_results.items():
+                        ch_imported = ch_result.get('imported', 0)
+                        ch_updated = ch_result.get('updated', 0)
+                        ch_skipped = ch_result.get('skipped', 0)
+                        if ch_imported > 0 or ch_updated > 0:
+                            channel_summary.append(f"{channel_name}: {ch_imported + ch_updated} videos")
+                    if channel_summary:
+                        parts.append(f"Channels updated: {', '.join(channel_summary)}")
 
                 message = f"Successfully processed {total} videos. " + ". ".join(parts) + "."
 
@@ -1132,16 +1387,15 @@ def import_videos():
                     'updated_count': updated,
                     'total_count': total,
                     'skipped_count': skipped,
-                    'deleted_count': result.get('deleted_count', 0),
+                    'channel_results': channel_results,
                     'processing_results': result.get('processing_results', {}),
-                    'stats_result': result.get('stats_result', {}),
                     'errors': result.get('errors', []),
                     'message': message + processing_info,
                     'detailed_results': {
                         'new_videos': imported - updated,
                         'updated_videos': updated,
                         'skipped_videos': skipped,
-                        'deleted_videos': result.get('deleted_count', 0),
+                        'channels_processed': len(channel_results) if channel_results else 0,
                         'compilation_updates': result.get('processing_results', {}).get('updated_compilations', 0)
                     }
                 })
@@ -1523,7 +1777,8 @@ class CompilationCreator:
         return selected_videos
 
     def create_compilation(self, duration_minutes: int, from_date: Optional[str] = None,
-                           title_prefix: str = "Auto-Generated", user_id: str = "system") -> Dict:
+                           title_prefix: str = "Auto-Generated", user_id: str = "system", 
+                           channel_id: Optional[str] = None) -> Dict:
         """
         Create a new compilation with sophisticated video selection and metadata generation.
         This is the main entry point for compilation creation.
@@ -1533,6 +1788,7 @@ class CompilationCreator:
             from_date: Optional date filter for video selection
             title_prefix: Prefix for the generated compilation title
             user_id: ID of the user creating the compilation
+            channel_id: ID of the channel to create compilation for
             
         Returns:
             Dictionary containing creation results and compilation metadata
@@ -1542,8 +1798,20 @@ class CompilationCreator:
         if duration_rounded < 5:
             duration_rounded = 5
 
-        # Get all videos for categorization
-        all_videos = list(self.videos_collection.find({}))
+        # Get videos for current channel only
+        query = {}
+        if channel_id:
+            # Apply the same filtering logic as used in index page
+            default_channel = channels_collection.find_one({'is_default': True})
+            if default_channel and str(default_channel['_id']) == channel_id:
+                query['$or'] = [
+                    {'channel_id': channel_id},
+                    {'channel_id': {'$exists': False}}  # Include legacy videos without channel_id
+                ]
+            else:
+                query['channel_id'] = channel_id
+        
+        all_videos = list(self.videos_collection.find(query))
 
         if not all_videos:
             return {
@@ -1594,7 +1862,7 @@ class CompilationCreator:
         # Generate compilation metadata
         compilation_doc = self._generate_compilation_document(
             selected_videos, duration_rounded, actual_duration_seconds,
-            title_prefix, user_id, from_date
+            title_prefix, user_id, from_date, channel_id
         )
 
         # Save to database
@@ -1622,7 +1890,8 @@ class CompilationCreator:
 
     def _generate_compilation_document(self, selected_videos: List[Dict], duration_rounded: int,
                                        actual_duration_seconds: int, title_prefix: str,
-                                       user_id: str, from_date: Optional[str]) -> Dict:
+                                       user_id: str, from_date: Optional[str],
+                                       channel_id: Optional[str]) -> Dict:
         """
         Generate comprehensive compilation document with all necessary metadata
         """
@@ -1667,8 +1936,9 @@ class CompilationCreator:
             'title': compilation_title,
             'duration_rounded': duration_rounded,
             'actual_duration_seconds': actual_duration_seconds,
-            'status': CompilationStatus.NOT_PUBLISHED.value,
+            'status': CompilationStatus.GENERATED.value,
             'created_by': user_id,
+            'channel_id': channel_id,
             'created_at': datetime.utcnow(),
             'updated_at': datetime.utcnow(),
             'from_date_filter': from_date,
@@ -1878,7 +2148,27 @@ def api_create_compilation():
                 'error': 'Tags must be a list'
             })
 
-        # Create compilation using advanced algorithm
+        # Get current channel for compilation creation
+        current_channel = get_current_channel()
+        current_channel_id = str(current_channel['_id']) if current_channel else None
+
+        # Filter videos by current channel
+        query = {}
+        if current_channel_id:
+            # For the default channel, show videos that either belong to this channel OR have no channel_id (legacy videos)
+            default_channel = channels_collection.find_one({'is_default': True})
+            if default_channel and str(default_channel['_id']) == current_channel_id:
+                query['$or'] = [
+                    {'channel_id': current_channel_id},
+                    {'channel_id': {'$exists': False}}  # Include legacy videos without channel_id
+                ]
+            else:
+                # For non-default channels, only show videos specifically for that channel
+                query['channel_id'] = current_channel_id
+
+        channel_filtered_videos = list(videos_collection.find(query))
+
+        # Create compilation using advanced algorithm with pre-filtered videos
         result = compilation_creator.create_compilation(
             duration_minutes=duration,
             from_date=from_date,
@@ -1886,7 +2176,9 @@ def api_create_compilation():
             tags=tags,  # Pass tags filter to compilation creator
             title_prefix='Auto-Generated',  # Fixed title prefix as requested
             user_id=user_id,
-            compilation_type=compilation_type
+            compilation_type=compilation_type,
+            pre_filtered_videos=channel_filtered_videos,
+            channel_id=current_channel_id
         )
         
         if result['success']:
@@ -1942,8 +2234,23 @@ def user_compilations():
     user_id = request.args.get('user_id', 'system')  # In production, get from session
     per_page = 10
     
+    # Get current channel for filtering
+    current_channel = get_current_channel()
+    current_channel_id = str(current_channel['_id']) if current_channel else None
+    
     # Build query with enhanced filtering
     query = {'created_by': user_id}
+    
+    # Filter by current channel
+    if current_channel_id:
+        default_channel = channels_collection.find_one({'is_default': True})
+        if default_channel and str(default_channel['_id']) == current_channel_id:
+            query['$or'] = [
+                {'channel_id': current_channel_id},
+                {'channel_id': {'$exists': False}}  # Include legacy compilations without channel_id
+            ]
+        else:
+            query['channel_id'] = current_channel_id
     if status_filter:
         query['status'] = status_filter
     
@@ -1960,30 +2267,18 @@ def user_compilations():
     
     # Calculate comprehensive statistics
     stats = {
-        'total': user_compilations_collection.count_documents({'created_by': user_id}),
-        'generated': user_compilations_collection.count_documents({
-            'created_by': user_id,
-            'status': CompilationStatus.GENERATED.value
-        }),
-        'to_do': user_compilations_collection.count_documents({
-            'created_by': user_id,
-            'status': CompilationStatus.TO_DO.value
-        }),
-        'ready': user_compilations_collection.count_documents({
-            'created_by': user_id,
-            'status': CompilationStatus.READY.value
-        }),
-        'uploaded': user_compilations_collection.count_documents({
-            'created_by': user_id,
-            'status': CompilationStatus.UPLOADED.value
-        }),
+        'total': user_compilations_collection.count_documents(query),
+        'generated': user_compilations_collection.count_documents({**query, 'status': CompilationStatus.GENERATED.value}),
+        'to_do': user_compilations_collection.count_documents({**query, 'status': CompilationStatus.TO_DO.value}),
+        'ready': user_compilations_collection.count_documents({**query, 'status': CompilationStatus.READY.value}),
+        'uploaded': user_compilations_collection.count_documents({**query, 'status': CompilationStatus.UPLOADED.value}),
         'total_videos': 0,
         'total_duration': 0
     }
     
     # Calculate total videos and duration
     pipeline = [
-        {'$match': {'created_by': user_id}},
+        {'$match': query},
         {'$group': {
             '_id': None,
             'total_videos': {'$sum': '$video_count'},
@@ -2019,8 +2314,25 @@ def api_compilation_preview():
         to_date = data.get('to_date')
         tags = data.get('tags', [])  # Get tags filter from request
 
-        # Get all available videos for analysis
-        all_videos = list(videos_collection.find({}))
+        # Get current channel for preview
+        current_channel = get_current_channel()
+        current_channel_id = str(current_channel['_id']) if current_channel else None
+
+        # Filter videos by current channel for preview
+        query = {}
+        if current_channel_id:
+            # For the default channel, show videos that either belong to this channel OR have no channel_id (legacy videos)
+            default_channel = channels_collection.find_one({'is_default': True})
+            if default_channel and str(default_channel['_id']) == current_channel_id:
+                query['$or'] = [
+                    {'channel_id': current_channel_id},
+                    {'channel_id': {'$exists': False}}  # Include legacy videos without channel_id
+                ]
+            else:
+                # For non-default channels, only show videos specifically for that channel
+                query['channel_id'] = current_channel_id
+
+        all_videos = list(videos_collection.find(query))
 
         # Get total available videos using the main categorization for other metrics
         categorized_videos = compilation_creator.categorize_videos_by_retention(
@@ -2059,7 +2371,8 @@ def api_compilation_preview():
             to_date=to_date,
             tags=tags,  # Pass tags filter to preview compilation
             user_id='preview',
-            return_compilation_doc=True
+            return_compilation_doc=True,
+            pre_filtered_videos=all_videos  # Use the channel-filtered videos
         )
 
         # Analyze the quality distribution of videos actually selected for compilation
