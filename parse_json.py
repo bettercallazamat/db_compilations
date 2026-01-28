@@ -83,8 +83,10 @@ def get_current_channel():
             channel = channels_collection.find_one({'_id': ObjectId(channel_id)})
             if channel:
                 return channel
+            # Channel from session doesn't exist in DB, clear session
+            session.pop('current_channel_id', None)
         except:
-            pass
+            session.pop('current_channel_id', None)
     
     # Fallback to default channel
     default_channel = channels_collection.find_one({'is_default': True})
@@ -810,12 +812,15 @@ def index():
     
     # Filter by current channel - handle both videos with channel_id and legacy videos
     if current_channel_id:
-        # For the default channel, show videos that either belong to this channel OR have no channel_id (legacy videos)
+        # Get the default channel
         default_channel = channels_collection.find_one({'is_default': True})
-        if default_channel and str(default_channel['_id']) == current_channel_id:
+        default_channel_id = str(default_channel['_id']) if default_channel else None
+        
+        if default_channel_id and current_channel_id == default_channel_id:
+            # For the default channel, show videos that either belong to this channel OR have no channel_id (legacy videos)
             query['$or'] = [
                 {'channel_id': current_channel_id},
-                {'channel_id': {'$exists': False}}  # Include legacy videos without channel_id
+                {'channel_id': {'$exists': False}}
             ]
         else:
             # For non-default channels, only show videos specifically for that channel
@@ -907,7 +912,9 @@ def index():
     if current_channel_id:
         # Apply the same filtering logic as for videos
         default_channel = channels_collection.find_one({'is_default': True})
-        if default_channel and str(default_channel['_id']) == current_channel_id:
+        default_channel_id = str(default_channel['_id']) if default_channel else None
+        
+        if default_channel_id and current_channel_id == default_channel_id:
             stats_query['$or'] = [
                 {'channel_id': current_channel_id},
                 {'channel_id': {'$exists': False}}
@@ -3371,10 +3378,56 @@ def api_delete_channel(channel_id):
         })
 
 
+@app.route('/api/debug/channels', methods=['GET'])
+@login_required
+def api_debug_channels():
+    """Debug endpoint to diagnose channel/video issues"""
+    try:
+        # Get all channels
+        channels = list(channels_collection.find({}))
+        for c in channels:
+            c['_id'] = str(c['_id'])
+        
+        # Get current channel from session
+        current_channel_id = session.get('current_channel_id')
+        current_channel = get_current_channel()
+        if current_channel:
+            current_channel['_id'] = str(current_channel['_id'])
+        
+        # Count videos per channel
+        video_counts = {}
+        for channel in channels:
+            ch_id = str(channel['_id'])
+            count = videos_collection.count_documents({'channel_id': ch_id})
+            video_counts[ch_id] = count
+        
+        # Count videos without channel_id
+        legacy_count = videos_collection.count_documents({'channel_id': {'$exists': False}})
+        
+        # Get default channel
+        default_channel = channels_collection.find_one({'is_default': True})
+        default_channel_id = str(default_channel['_id']) if default_channel else None
+        
+        return jsonify({
+            'success': True,
+            'channels': channels,
+            'current_channel': current_channel,
+            'session_current_channel_id': current_channel_id,
+            'default_channel_id': default_channel_id,
+            'video_counts_per_channel': video_counts,
+            'legacy_videos_count': legacy_count,
+            'total_videos': videos_collection.count_documents({})
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
+
 # ==================== SETTINGS PAGE ROUTES ====================
 
 @app.route('/settings')
-@login_required
 def settings():
     """Settings page with blacklist and general configuration"""
     try:
