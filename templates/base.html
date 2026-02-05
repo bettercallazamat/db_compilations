@@ -302,6 +302,21 @@
 
       <div class="collapse navbar-collapse" id="navbarNav">
         <ul class="navbar-nav me-auto">
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle" href="#" id="channelDropdown" role="button" data-bs-toggle="dropdown">
+              <i class="fas fa-tv me-1"></i>{{ current_channel.channel_name if current_channel else 'Select Channel' }}
+            </a>
+            <ul class="dropdown-menu">
+              {% for channel in available_channels %}
+              <li>
+                <a class="dropdown-item {% if current_channel and channel.channel_id == current_channel.channel_id %}active{% endif %}" 
+                   href="/set-channel/{{ channel.channel_id }}">
+                  {{ channel.channel_name }}
+                </a>
+              </li>
+              {% endfor %}
+            </ul>
+          </li>
           <li class="nav-item">
             <a class="nav-link {% if request.endpoint == 'index' %}active{% endif %}" href="/">
               <i class="fas fa-home me-1"></i>Videos

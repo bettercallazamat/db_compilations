@@ -781,7 +781,9 @@ class CompilationCreator:
     def create_compilation(self, duration_minutes: int, from_date: Optional[str] = None,
                            to_date: Optional[str] = None, tags: Optional[List[str]] = None,
                            title_prefix: str = "Auto-Generated",
-                           user_id: str = "system", compilation_type: str = "default", return_compilation_doc: bool = False) -> Dict:
+                           user_id: str = "system", compilation_type: str = "default", 
+                           channel_id: Optional[str] = None, channel_name: Optional[str] = None, 
+                           return_compilation_doc: bool = False) -> Dict:
         """
         Create a new compilation with sophisticated video selection and metadata generation.
         This is the main entry point for compilation creation.
@@ -804,8 +806,19 @@ class CompilationCreator:
         if duration_rounded < 5:
             duration_rounded = 5
 
-        # Get all videos for categorization
-        all_videos = list(self.videos_collection.find({}))
+        # Get videos for categorization - filter by channel_id if provided
+        query = {}
+        if channel_id:
+            query['channel_id'] = channel_id
+            print(f"🔍 DEBUG: Filtering videos by channel_id: {channel_id}")
+        else:
+            print(f"⚠️  WARNING: No channel_id provided, fetching ALL videos!")
+        
+        all_videos = list(self.videos_collection.find(query))
+        if all_videos:
+            print(f"📊 DEBUG: Found {len(all_videos)} videos for compilation creation")
+        else:
+            print(f"❌ DEBUG: No videos found with channel_id filter")
 
         if not all_videos:
             return {
@@ -879,7 +892,8 @@ class CompilationCreator:
         # Generate compilation metadata
         compilation_doc = self._generate_compilation_document(
             selected_videos, duration_rounded, actual_duration_seconds,
-            title_prefix, user_id, from_date, compilation_type
+            title_prefix, user_id, from_date, compilation_type,
+            channel_id, channel_name
         )
 
         # Save to database
@@ -925,7 +939,8 @@ class CompilationCreator:
 
     def _generate_compilation_document(self, selected_videos: List[Dict], duration_rounded: int,
                                        actual_duration_seconds: int, title_prefix: str,
-                                       user_id: str, from_date: Optional[str], compilation_type: str = "default") -> Dict:
+                                       user_id: str, from_date: Optional[str], compilation_type: str = "default",
+                                       channel_id: Optional[str] = None, channel_name: Optional[str] = None) -> Dict:
         """
         Generate comprehensive compilation document with all necessary metadata
         """
@@ -980,6 +995,9 @@ class CompilationCreator:
             'from_date_filter': from_date,
             'video_count': len(selected_videos),
             'timestamps': timestamps,
+            # Channel information
+            'channel_id': channel_id or '',
+            'channel_name': channel_name or '',
             'metadata': {
                 'retention_30s': round(avg_retention, 2),
                 'total_original_views': total_original_views,
