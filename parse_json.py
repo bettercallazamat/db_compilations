@@ -618,8 +618,15 @@ class VideoManager:
     @staticmethod
     def _prepare_video_update(video_data, channel_id='', channel_name=''):
         """Prepare update document for existing videos"""
+        current_title = video_data.get('title', '')
+        
+        # Strip [DELETED] prefix if video is being restored
+        if current_title.startswith('[DELETED]'):
+            current_title = current_title.replace('[DELETED]', '', 1).strip()
+        
         update_doc = {
-            'title': video_data.get('title', ''),
+            'title': current_title,
+            'is_deleted': False,  # Reset deletion status when video reappears in JSON
             'published_at': video_data.get('published_at', ''),
             'description': video_data.get('description', ''),
             'thumbnail_url': video_data.get('thumbnail_url', ''),
