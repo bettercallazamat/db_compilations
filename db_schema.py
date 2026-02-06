@@ -23,11 +23,20 @@ class DatabaseSchema:
             IndexModel([("view_count", DESCENDING)]),
             IndexModel([("duration_seconds", ASCENDING)]),
             IndexModel([("created_at", DESCENDING)]),
+            # Additional indexes for filtering
+            IndexModel([("channel_id", ASCENDING)]),
+            IndexModel([("compilation_usage_stats.total_inclusions", ASCENDING)]),
+            # Compound index for common queries
+            IndexModel([("is_compilation", ASCENDING), ("duration_seconds", ASCENDING)]),
         ]
 
         # Compilations collection indexes
         compilations_indexes = [
             IndexModel([("video_id", ASCENDING)], unique=True),
+            # Critical index for N+1 query optimization
+            IndexModel([("video_ids", ASCENDING)]),
+            # Critical index for checking video_id in timestamps (used in compilation creation)
+            IndexModel([("timestamps.video_id", ASCENDING)]),
             IndexModel([("duration_rounded", ASCENDING)]),
             IndexModel([("created_at", DESCENDING)]),
             IndexModel([("view_count", DESCENDING)]),

@@ -2,6 +2,7 @@ import re
 import math
 from datetime import datetime, timedelta
 from typing import List, Dict, Tuple, Optional
+from pymongo import UpdateOne
 
 
 class CompilationParser:
@@ -186,21 +187,30 @@ class VideoUsageTracker:
         )
 
     def _update_all_video_stats(self):
-        """Update statistics for all videos"""
-        videos = self.videos_collection.find({})
-
+        """Update statistics for all videos using bulk write operations"""
+        videos = list(self.videos_collection.find({}))
+        
+        if not videos:
+            return 0
+        
+        # Build bulk operations
+        bulk_updates = []
         for video in videos:
             stats = self._calculate_video_stats(video.get('video_id'))
-
-            self.videos_collection.update_one(
+            bulk_updates.append(UpdateOne(
                 {'_id': video['_id']},
-                {
-                    '$set': {
-                        'compilation_usage_stats': stats,
-                        'stats_updated_at': datetime.utcnow()
-                    }
-                }
-            )
+                {'$set': {
+                    'compilation_usage_stats': stats,
+                    'stats_updated_at': datetime.utcnow()
+                }}
+            ))
+        
+        # Execute bulk write
+        if bulk_updates:
+            result = self.videos_collection.bulk_write(bulk_updates)
+            return result.modified_count
+        
+        return 0
 
     def _calculate_video_stats(self, video_id: str) -> dict:
         """Calculate usage statistics for a video"""

@@ -2,8 +2,12 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Tuple, Optional, Any
 from bson.objectid import ObjectId
 import math
+import logging
 from enum import Enum
 from compilation_parser import VideoUsageTracker
+
+# Set up logger
+logger = logging.getLogger(__name__)
 
 
 class CompilationStatus(Enum):
@@ -51,15 +55,47 @@ class CompilationCreator:
         self.RETENTION_WEIGHT = 0.6  # Weight factor for retention rate in scoring algorithm
         self.VIEW_COUNT_WEIGHT = 0.1  # Weight factor for view count in scoring algorithm
         self.FRESHNESS_WEIGHT = 0.1  # Weight factor for video freshness in scoring algorithm
+        
+        # Cache for blacklist (instance-level, valid for 5 minutes)
+        self._blacklist_cache = None
+        self._blacklist_cache_time = None
+        self._BLACKLIST_CACHE_TTL = 300  # 5 minutes
+
+    def _is_blacklist_cache_valid(self) -> bool:
+        """Check if blacklist cache is still valid"""
+        if self._blacklist_cache is None or self._blacklist_cache_time is None:
+            return False
+        from time import time
+        return (time() - self._blacklist_cache_time) < self._BLACKLIST_CACHE_TTL
+
+    def _get_cached_blacklist(self) -> set:
+        """Get cached blacklist if valid"""
+        if self._is_blacklist_cache_valid():
+            return self._blacklist_cache
+        return None
+
+    def _set_blacklist_cache(self, blacklist_set: set):
+        """Set blacklist cache"""
+        from time import time
+        self._blacklist_cache = blacklist_set
+        self._blacklist_cache_time = time()
 
     def get_blacklisted_video_ids(self) -> set:
-        """Get set of blacklisted video IDs"""
+        """Get set of blacklisted video IDs with caching"""
         if self.blacklist_collection is None:
             return set()
         
+        # Try to get from cache first
+        cached = self._get_cached_blacklist()
+        if cached is not None:
+            return cached
+        
         try:
             blacklisted_items = list(self.blacklist_collection.find({}, {'video_id': 1}))
-            return {item['video_id'] for item in blacklisted_items}
+            blacklist_set = {item['video_id'] for item in blacklisted_items}
+            # Cache the result
+            self._set_blacklist_cache(blacklist_set)
+            return blacklist_set
         except Exception as e:
             print(f"Error fetching blacklist: {e}")
             return set()
@@ -109,6 +145,23 @@ class CompilationCreator:
         # Get blacklisted video IDs
         blacklisted_ids = self.get_blacklisted_video_ids()
 
+        # PERFORMANCE OPTIMIZATION: Pre-fetch all video IDs from compilations
+        # to avoid N+1 queries (one query per video in the loop)
+        existing_video_ids = set()
+        try:
+            # Get all video_ids from all compilations using distinct
+            existing_video_ids = set(
+                self.compilations_collection.distinct('video_ids')
+            )
+            # Also get video_ids from timestamps (some videos might be in timestamps)
+            timestamp_video_ids = set(
+                self.compilations_collection.distinct('timestamps.video_id')
+            )
+            existing_video_ids.update(timestamp_video_ids)
+        except Exception as e:
+            # If there's an error, we'll fall back to per-video queries
+            logger.warning(f"Failed to pre-fetch video IDs: {e}")
+
         # Add these counters at the beginning
         filter_stats = {
             'total_videos': len(videos),
@@ -144,8 +197,8 @@ class CompilationCreator:
             #     filter_stats['filtered_title_keywords'] += 1
             #     continue
 
-            # Check if video_id exists in compilations collection (extra safety)
-            if self.compilations_collection.find_one({'video_ids': video.get('video_id')}):
+            # PERFORMANCE OPTIMIZATION: Check against pre-fetched set instead of database query
+            if video_id in existing_video_ids:
                 filter_stats['filtered_exists_in_compilations'] += 1
                 continue
 
@@ -292,13 +345,28 @@ class CompilationCreator:
         filtered_videos = []
         current_date = datetime.utcnow()
 
+        # PERFORMANCE OPTIMIZATION: Pre-fetch all video IDs from compilations
+        # to avoid N+1 queries (one query per video in the loop)
+        existing_video_ids = set()
+        try:
+            existing_video_ids = set(
+                self.compilations_collection.distinct('video_ids')
+            )
+            timestamp_video_ids = set(
+                self.compilations_collection.distinct('timestamps.video_id')
+            )
+            existing_video_ids.update(timestamp_video_ids)
+        except Exception as e:
+            logger.warning(f"Failed to pre-fetch video IDs for preview: {e}")
+
         for video in videos:
             # Skip compilation videos
             if video.get('is_compilation', False):
                 continue
 
-            # Check if video_id exists in compilations collection
-            if self.compilations_collection.find_one({'video_ids': video.get('video_id')}):
+            # PERFORMANCE OPTIMIZATION: Check against pre-fetched set instead of database query
+            video_id = video.get('video_id', '')
+            if video_id in existing_video_ids:
                 continue
 
             # Check video duration constraints (1-5 minutes)
