@@ -23,7 +23,9 @@ def check_mongodb():
     """Check if MongoDB is running"""
     try:
         from pymongo import MongoClient
-        client = MongoClient('mongodb://localhost:27017/',
+        mongo_uri = os.environ.get(
+            'MONGO_URI', 'mongodb://localhost:27017/video_database')
+        client = MongoClient(mongo_uri,
                              serverSelectionTimeoutMS=2000)
         client.server_info()
         print("✅ MongoDB connection successful")
