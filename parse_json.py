@@ -20,7 +20,9 @@ from frontend_manager import FrontendTemplateManager
 app = Flask(__name__)
 
 # Flask configuration
-app.config["MONGO_URI"] = "mongodb://localhost:27017/video_database"
+# app.config["MONGO_URI"] = "mongodb://localhost:27017/video_database"
+app.config["MONGO_URI"] = os.environ.get(
+    'MONGO_URI', 'mongodb://localhost:27017/video_database')
 app.config["SECRET_KEY"] = "your-secret-key-change-in-production"
 
 # Session timeout (60 minutes)
